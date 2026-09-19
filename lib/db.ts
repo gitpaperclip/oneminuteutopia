@@ -1,6 +1,11 @@
 import postgres from 'postgres';
 import { nanoid } from 'nanoid';
 
+// Configuration note: For Supabase on Vercel serverless, use the Transaction pooler URI
+// (port 6543, host ending in pooler.supabase.com) in DATABASE_URL.
+// Example: postgresql://postgres.PROJECT_REF:PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require
+// The prepare:false option is required for PgBouncer compatibility in transaction pooling mode.
+
 export interface Report {
   id: string;
   incident_id: string | null;
@@ -61,6 +66,7 @@ export class DatabaseService {
 
     this.sql = postgres(connectionString, {
       ssl: connectionString.includes('supabase.co') ? 'require' : undefined,
+      prepare: false, // Required for PgBouncer transaction pooling mode
       max: 10,
       idle_timeout: 20,
       connect_timeout: 10,
@@ -69,8 +75,25 @@ export class DatabaseService {
     return this.sql;
   }
 
+  /**
+   * Test database connectivity with a simple SELECT query.
+   * Throws an error if the connection fails.
+   */
+  static async testConnection(): Promise<void> {
+    try {
+      const sql = this.getConnection();
+      await sql`SELECT 1 as test`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Database connection test failed: ${message}`);
+    }
+  }
+
   static async ensureTablesExist(): Promise<void> {
     try {
+      // Test connection first
+      await this.testConnection();
+
       const sql = this.getConnection();
       
       await sql`
@@ -146,7 +169,8 @@ export class DatabaseService {
       await sql`CREATE INDEX IF NOT EXISTS idx_incidents_location ON incidents(latitude, longitude)`;
     } catch (error) {
       console.error('Error ensuring tables exist:', error);
-      throw error;
+      const message = error instanceof Error ? error.message : 'Unknown database error';
+      throw new Error(`Failed to initialize database: ${message}`);
     }
   }
 

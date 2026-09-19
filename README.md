@@ -16,11 +16,13 @@ One Minute Utopia is a Next.js application that enables community members to qui
 ## Tech Stack
 
 - **Framework**: Next.js 16 (App Router)
-- **Database**: Supabase Postgres (serverless PostgreSQL)
+- **Database**: Supabase Postgres (serverless PostgreSQL with Transaction pooler)
 - **File Storage**: Supabase Storage (public bucket for report photos)
 - **AI**: Google Gemini 2.0 Flash
 - **Deployment**: Vercel
 - **Styling**: Tailwind CSS 4
+
+> **Important**: For Supabase on Vercel serverless, you **must** use the **Transaction pooler** connection string (port 6543, NOT 5432). See Database Configuration below.
 
 ## Prerequisites
 
@@ -59,16 +61,20 @@ You'll need these values for Vercel environment variables:
 
 1. **Project URL**: Go to **Project Settings** → **API**
    - Copy the **Project URL** (e.g., `https://obvqhywolewuiplftfgd.supabase.co`)
+   - **IMPORTANT**: Verify your project reference ID is correct (e.g., `obvqhywolewuiplftfgd` - note the letter `l`)
 
 2. **API Keys**: In the same **API** section:
    - Copy **anon/public** key (for `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
    - Copy **service_role** key (for `SUPABASE_SERVICE_ROLE_KEY`) ⚠️ Keep this secret!
 
-3. **Database Connection String**: Go to **Project Settings** → **Database**
-   - Under **Connection string**, select **URI**
-   - Copy the full connection string
-   - Format: `postgresql://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres`
-   - **Important**: Add `?sslmode=require` at the end
+3. **Database Connection String (Transaction Pooler - REQUIRED)**:
+   - Go to **Project Settings** → **Database**
+   - Under **Connection string**, select **Connection pooling** (NOT "Session mode")
+   - Copy the URI (port `6543`, hostname ending in `pooler.supabase.com`)
+   - Format: `postgresql://postgres.PROJECT_REF:[PASSWORD]@aws-0-REGION.pooler.supabase.com:6543/postgres`
+   - **Add** `?sslmode=require` at the end
+
+> **Why Transaction Pooler?** Vercel's serverless functions create many short-lived connections. Supabase's transaction pooler (PgBouncer with `prepare: false`) efficiently manages these connections, preventing "too many connections" errors. The session mode connection (port 5432) is NOT compatible with serverless environments and will cause connection failures.
 
 ### 2. Deploy to Vercel
 
@@ -99,9 +105,12 @@ Go to your Vercel project → **Settings** → **Environment Variables** and add
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://obvqhywolewuiplftfgd.supabase.co` | Project Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGci...` (your anon key) | Project Settings → API → anon/public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGci...` (your service key) | Project Settings → API → service_role key ⚠️ |
-| `DATABASE_URL` | `postgresql://postgres:[PASSWORD]@db.obvqhywolewuiplftfgd.supabase.co:5432/postgres?sslmode=require` | Project Settings → Database → Connection string → URI (add `?sslmode=require`) |
+| `DATABASE_URL` | `postgresql://postgres.PROJECT_REF:[PASSWORD]@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require` | Project Settings → Database → Connection pooling URI + `?sslmode=require` |
 
-⚠️ **Important**: The `DATABASE_URL` must include `?sslmode=require` at the end for Supabase Postgres.
+⚠️ **Critical**: 
+- Use the **Connection pooling** URI (port `6543`), NOT the direct connection (port `5432`)
+- Verify your project reference ID has the correct letters (e.g., `obvqhywolewuiplftfgd` with `l`)
+- The `DATABASE_URL` must end with `?sslmode=require`
 
 #### Application Configuration (Required)
 
@@ -116,7 +125,7 @@ Go to your Vercel project → **Settings** → **Environment Variables** and add
 
 If you previously used Vercel Postgres (Neon) or Vercel Blob, **remove these old variables** from Vercel:
 
-- ❌ `POSTGRES_URL`
+- ❌ `POSTGRES_URL` (unless it's your Supabase pooler URI)
 - ❌ `POSTGRES_PRISMA_URL`
 - ❌ `POSTGRES_URL_NO_SSL`
 - ❌ `POSTGRES_URL_NON_POOLING`
@@ -162,12 +171,19 @@ Expected response:
 ```json
 {
   "status": "ok",
+  "timestamp": "2026-09-19T04:33:00.000Z",
   "checks": {
-    "supabase_database": true,
-    "supabase_storage": true,
-    "ai_analysis": true
+    "env_vars": {
+      "supabase_database": true,
+      "supabase_storage": true,
+      "ai_analysis": true
+    },
+    "database_connection": {
+      "status": "ok",
+      "message": "Connected"
+    }
   },
-  "message": "All required services are configured"
+  "message": "All required services are configured and connected"
 }
 ```
 
@@ -215,7 +231,7 @@ Edit `.env.local` with your Supabase credentials:
 NEXT_PUBLIC_SUPABASE_URL=https://obvqhywolewuiplftfgd.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.obvqhywolewuiplftfgd.supabase.co:5432/postgres?sslmode=require
+DATABASE_URL=postgresql://postgres.PROJECT_REF:[PASSWORD]@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require
 
 # Google Gemini
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -292,7 +308,7 @@ See [.env.example](.env.example) for the complete list with detailed comments.
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `DATABASE_URL` (with `?sslmode=require`)
+- `DATABASE_URL` (with Transaction pooler URI + `?sslmode=require`)
 - `GEMINI_API_KEY`
 - `ORGANIZER_PASSPHRASE`
 - `SESSION_SECRET`
@@ -304,7 +320,7 @@ See [.env.example](.env.example) for the complete list with detailed comments.
 app/
   api/
     auth/login/      # Organizer authentication
-    health/          # Health check endpoint (Supabase readiness)
+    health/          # Health check endpoint with live DB connection test
     incidents/       # Incident list for coordinators
     media/           # Image proxy for Supabase Storage
     submit/          # Report submission
@@ -313,7 +329,7 @@ app/
   receipt/[id]/      # Submission confirmation page
   page.tsx           # Main reporting interface
 lib/
-  db.ts              # Supabase Postgres database service
+  db.ts              # Supabase Postgres database service (with pooler config)
   storage.ts         # Supabase Storage service
   gemini.ts          # AI analysis service
   session.ts         # Session management
@@ -327,9 +343,12 @@ lib/
 - Try uploading a photo instead (always works)
 
 ### Database connection errors
-- Verify `DATABASE_URL` is set with `?sslmode=require` at the end
-- Check that your Supabase project is active in the dashboard
-- Verify the database password is correct
+- **Verify database connection** at `https://your-app.vercel.app/api/health`
+- **For Supabase**: Ensure you're using the **Transaction pooler** URI (port `6543`, NOT `5432`)
+- **For Supabase**: Verify your project reference ID is correct (check for missing/extra letters like `l`)
+- **Check** that `DATABASE_URL` includes `?sslmode=require` at the end
+- **Verify** database credentials in Vercel environment variables
+- **Common error**: "too many connections" means you're using port 5432 instead of the pooler (6543)
 - Tables are auto-created on first use
 
 ### Image upload fails
@@ -344,7 +363,8 @@ lib/
 - Analysis timeout is 8 seconds (images are still saved)
 
 ### Health check shows degraded status
-- Visit `/api/health` to see which services are not configured
+- Visit `/api/health` to see which services are not configured or unreachable
+- Check `database_connection.status` - if "error", see message for details
 - Verify all required environment variables are set in Vercel
 - Redeploy after adding missing variables
 
@@ -366,8 +386,9 @@ The app will prefer Supabase variables over legacy Vercel variables, so you can 
 **Phase 1 (Current)**: Core reporting + coordinator inbox
 - ✅ Mobile camera capture
 - ✅ AI categorization
-- ✅ Supabase Postgres + Storage
+- ✅ Supabase Postgres + Storage with Transaction pooler
 - ✅ Coordinator authentication
+- ✅ Live database health checks
 
 **Phase 2 (Future)**:
 - 🔜 Interactive map view

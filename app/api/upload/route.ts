@@ -53,26 +53,38 @@ function checkRateLimit(sessionId: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  let sessionId: string | null = null;
+  let sessionId: string;
   let buffer: Buffer | null = null;
   let file: File | null = null;
   let imagePath: string | null = null;
   let hash: string | null = null;
   let mimeType: string | undefined = undefined;
 
+  // Step 1: Session creation (DB operation)
   try {
-    // Step 1: Session management
-    try {
-      sessionId = await SessionService.getOrCreateSession();
-      await SessionService.setSessionCookie(sessionId);
-    } catch (error) {
-      console.error('Session creation error:', error);
-      return NextResponse.json(
-        { error: 'Database is not configured. Please contact support.' },
-        { status: 503 }
-      );
-    }
+    sessionId = await SessionService.getOrCreateSession();
+  } catch (error) {
+    console.error('Session creation error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const truncated = errorMessage.length > 100 ? errorMessage.slice(0, 100) + '...' : errorMessage;
+    return NextResponse.json(
+      { error: `Database connection failed: ${truncated}` },
+      { status: 503 }
+    );
+  }
 
+  // Step 2: Set session cookie
+  try {
+    await SessionService.setSessionCookie(sessionId);
+  } catch (error) {
+    console.error('Cookie setting error:', error);
+    return NextResponse.json(
+      { error: 'Failed to set session cookie' },
+      { status: 500 }
+    );
+  }
+
+  try {
     // Rate limiting
     if (!checkRateLimit(sessionId)) {
       return NextResponse.json(
@@ -81,7 +93,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 2: File validation
+    // Step 3: File validation
     try {
       const formData = await req.formData();
       file = formData.get('image') as File;
@@ -114,7 +126,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 3: Save image to Supabase Storage
+    // Step 4: Save image to Supabase Storage
     try {
       const result = await StorageService.saveImage(buffer, mimeType);
       imagePath = result.path;
@@ -137,7 +149,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 4: AI analysis (soft failure - never blocks success if image is saved)
+    // Step 5: AI analysis (soft failure - never blocks success if image is saved)
     let analysis = null;
     try {
       analysis = await GeminiService.analyzeImage(buffer, mimeType);

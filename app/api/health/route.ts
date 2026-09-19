@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { DatabaseService } from '@/lib/db';
 
 export class HealthCheckService {
   static checkEnvironment(): {
@@ -44,18 +45,45 @@ export class HealthCheckService {
 
 export async function GET() {
   const health = HealthCheckService.checkEnvironment();
-  const allOk = health.supabase_db && health.supabase_storage;
+  
+  // Perform live database connection test
+  let dbConnectionStatus: 'ok' | 'error' = 'error';
+  let dbConnectionMessage = '';
+  
+  if (health.supabase_db) {
+    try {
+      await DatabaseService.testConnection();
+      dbConnectionStatus = 'ok';
+      dbConnectionMessage = 'Connected';
+    } catch (error) {
+      dbConnectionStatus = 'error';
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // Truncate error message to avoid exposing secrets
+      dbConnectionMessage = errorMessage.length > 150 ? errorMessage.slice(0, 150) + '...' : errorMessage;
+    }
+  } else {
+    dbConnectionMessage = 'Database not configured';
+  }
+  
+  const allOk = health.supabase_db && health.supabase_storage && dbConnectionStatus === 'ok';
   
   return NextResponse.json({
     status: allOk ? 'ok' : 'degraded',
+    timestamp: new Date().toISOString(),
     checks: {
-      supabase_database: health.supabase_db,
-      supabase_storage: health.supabase_storage,
-      ai_analysis: health.gemini,
+      env_vars: {
+        supabase_database: health.supabase_db,
+        supabase_storage: health.supabase_storage,
+        ai_analysis: health.gemini,
+      },
+      database_connection: {
+        status: dbConnectionStatus,
+        message: dbConnectionMessage,
+      },
     },
     message: allOk 
-      ? 'All required services are configured' 
-      : 'Some required services are not configured',
+      ? 'All required services are configured and connected' 
+      : 'Some required services are not configured or unreachable',
     details: health.details.length > 0 ? health.details : undefined,
   }, {
     status: allOk ? 200 : 503,
