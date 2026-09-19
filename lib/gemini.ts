@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { PROMPT, SCHEMA, parseGemini, imageMime, MAX_IMAGE_BYTES } from './hazard-analysis.mjs';
+import { PROMPT, GEMINI_SCHEMA, parseGemini, imageMime, MAX_IMAGE_BYTES } from './hazard-analysis.mjs';
 
 export const ANALYSIS_TIMEOUT_MS = 18_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -25,6 +25,7 @@ export class GeminiAnalysisError extends Error {
   readonly finishReason?: string;
   readonly thoughtsTokenCount?: number;
   readonly candidatesTokenCount?: number;
+  providerErrorBody?: unknown;
 
   constructor(
     code: FailureCode,
@@ -53,7 +54,8 @@ function record(value: unknown): Record<string, unknown> {
 
 async function requestFailure(response: Response): Promise<GeminiAnalysisError> {
   const body = await response.json().catch(() => null);
-  const details = record(record(body).error).details;
+  const errorObj = record(body).error;
+  const details = record(errorObj).details;
   const reason = Array.isArray(details)
     ? details.map(detail => record(detail).reason).find((value): value is string =>
       typeof value === 'string' && SAFE_PROVIDER_REASONS.has(value))
@@ -64,7 +66,11 @@ async function requestFailure(response: Response): Promise<GeminiAnalysisError> 
   else if (status === 429) code = 'rate_limited';
   else if (status === 404) code = 'model_unavailable';
   else if (status >= 500) code = 'provider_unavailable';
-  return new GeminiAnalysisError(code, status, reason);
+  const error = new GeminiAnalysisError(code, status, reason);
+  if (status === 400 && body) {
+    (error as { providerErrorBody?: unknown }).providerErrorBody = body;
+  }
+  return error;
 }
 
 export interface AnalysisResult {
@@ -126,7 +132,7 @@ export class GeminiService {
                 : {}),
               // Use the established generateContent JSON Schema fields.
               responseMimeType: 'application/json',
-              responseJsonSchema: SCHEMA,
+              responseJsonSchema: GEMINI_SCHEMA,
             },
           }),
         },
