@@ -2,6 +2,7 @@ import 'server-only';
 import type { Report } from './db.ts';
 import { CATEGORY_LABELS } from './analysis-labels.ts';
 import type { PreparedReport, PreparedReportServiceOption } from './prepared-report-types.ts';
+import { build311Description } from './prepare-311-description.mjs';
 
 export class BaltimoreRoutingService {
   /**
@@ -73,6 +74,16 @@ export class BaltimoreRoutingService {
         readinessMessage = 'This report requires review.';
     }
 
+    // Build complete 311 description using deterministic builder
+    const description = build311Description({
+      incident_type: report.incident_type || 'unspecified',
+      context_summary: report.context_summary,
+      context_tags: report.tags || [],
+      user_description: report.user_description,
+      evidence_count: 1, // Single report (clustering handled elsewhere)
+      location_address: report.location_address,
+    });
+
     return {
       report_id: report.id,
       readiness,
@@ -86,7 +97,7 @@ export class BaltimoreRoutingService {
       last_verified: '2026-09-19', // Current date per workplan
       source_url: 'https://balt311.baltimorecity.gov/',
       prepared_fields: {
-        description: report.user_description || '',
+        description,
         location: report.location_address || '',
         latitude: report.latitude,
         longitude: report.longitude,
@@ -95,9 +106,9 @@ export class BaltimoreRoutingService {
         category_label: CATEGORY_LABELS[report.category] || report.category,
         incident_type: report.incident_type || '',
         context_summary: report.context_summary || '',
-        seriousness: report.seriousness,
+        seriousness: report.seriousness as number | null,
         created_at: report.created_at,
-      },
+      } as Record<string, string | number | null>,
       user_action: readiness === 'ready' 
         ? 'Open the Baltimore 311 portal and enter the details shown above.'
         : null,
