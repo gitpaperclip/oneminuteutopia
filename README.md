@@ -58,7 +58,7 @@ One Minute Utopia is a Next.js application that enables community members to qui
 You'll need these values for Vercel environment variables:
 
 1. **Project URL**: Go to **Project Settings** → **API**
-   - Copy the **Project URL** (e.g., `https://obvqhywolewuipftfgd.supabase.co`)
+   - Copy the **Project URL** (e.g., `https://obvqhywolewuiplftfgd.supabase.co`)
 
 2. **API Keys**: In the same **API** section:
    - Copy **anon/public** key (for `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
@@ -96,10 +96,10 @@ Go to your Vercel project → **Settings** → **Environment Variables** and add
 
 | Variable | Value | Where to Find |
 |----------|-------|---------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://obvqhywolewuipftfgd.supabase.co` | Project Settings → API → Project URL |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://obvqhywolewuiplftfgd.supabase.co` | Project Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGci...` (your anon key) | Project Settings → API → anon/public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGci...` (your service key) | Project Settings → API → service_role key ⚠️ |
-| `DATABASE_URL` | `postgresql://postgres:[PASSWORD]@db.obvqhywolewuipftfgd.supabase.co:5432/postgres?sslmode=require` | Project Settings → Database → Connection string → URI (add `?sslmode=require`) |
+| `DATABASE_URL` | `postgresql://postgres:[PASSWORD]@db.obvqhywolewuiplftfgd.supabase.co:5432/postgres?sslmode=require` | Project Settings → Database → Connection string → URI (add `?sslmode=require`) |
 
 ⚠️ **Important**: The `DATABASE_URL` must include `?sslmode=require` at the end for Supabase Postgres.
 
@@ -212,10 +212,10 @@ Edit `.env.local` with your Supabase credentials:
 
 ```bash
 # Supabase (get from dashboard - Project Settings → API and Database)
-NEXT_PUBLIC_SUPABASE_URL=https://obvqhywolewuipftfgd.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://obvqhywolewuiplftfgd.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-DATABASE_URL=postgresql://postgres:[PASSWORD]@db.obvqhywolewuipftfgd.supabase.co:5432/postgres?sslmode=require
+DATABASE_URL=postgresql://postgres:[PASSWORD]@db.obvqhywolewuiplftfgd.supabase.co:5432/postgres?sslmode=require
 
 # Google Gemini
 GEMINI_API_KEY=your_gemini_api_key_here
