@@ -18,6 +18,7 @@ import {
 } from '@/lib/map-copy';
 import { formatSeverity } from '@/lib/severity';
 import { formatTimestamp } from '@/lib/utils';
+import { HowToOpenButton, HowToOverlay } from '@/components/HowToPanel';
 import { MapFilterPanel, MapFilterToggle } from '@/components/map/MapFilters';
 import {
   fetchConfirmation,
@@ -57,6 +58,7 @@ export function MapShell() {
   const [loadedUrlKey, setLoadedUrlKey] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const waitingForBounds = !bbox && !allowUnbounded;
   const loading = waitingForBounds || loadedUrlKey !== urlKey;
@@ -165,6 +167,13 @@ export function MapShell() {
               <Link href="/" className="map-chrome-report">
                 {MAP_COPY.report}
               </Link>
+              <HowToOpenButton
+                className="map-chrome-info"
+                onClick={() => {
+                  setFiltersOpen(false);
+                  setInfoOpen(true);
+                }}
+              />
             </div>
           </div>
           {filtersOpen ? <MapFilterPanel filters={urlFilters} onChange={applyFilters} /> : null}
@@ -212,6 +221,11 @@ export function MapShell() {
           onCount={updateConfirmationCount}
         />
       )}
+
+      <HowToOverlay
+        open={infoOpen}
+        onClose={() => setInfoOpen(false)}
+      />
     </div>
   );
 }

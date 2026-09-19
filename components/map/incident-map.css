@@ -166,6 +166,22 @@
   border-radius: 12px;
 }
 
+.map-chrome-info {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  min-width: 40px;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  color: var(--blue);
+  border-radius: 12px;
+}
+
+.map-shell > .info-overlay {
+  z-index: 1200;
+}
+
 .map-filter-toggle {
   display: inline-flex;
   align-items: center;
