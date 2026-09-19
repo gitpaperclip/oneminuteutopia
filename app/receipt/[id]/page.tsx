@@ -241,6 +241,13 @@ export default async function ReceiptPage({
       ) : null}
 
       <p className="receipt-actions">
+        <Link
+          href="/map"
+          className="btn btn-block"
+          style={{ background: 'var(--blue-soft)', color: 'var(--blue)', marginBottom: 8 }}
+        >
+          View incident map
+        </Link>
         <Link href="/" className="btn btn-primary btn-block">
           New report
         </Link>
