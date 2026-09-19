@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES, MAX_IMAGE_BYTES, PROMPT, validateAnalysis, parseGemini, imageMime } from '../lib/hazard-analysis.mjs';
-import { ANALYSIS_TIMEOUT_MS, GeminiAnalysisError, GeminiService } from '../lib/gemini.ts';
+import {
+  ANALYSIS_TIMEOUT_MS, GeminiAnalysisError, GeminiService,
+  RATE_LIMIT_BACKOFF_BASE_MS, RATE_LIMIT_BACKOFF_CAP_MS, RATE_LIMIT_MAX_ATTEMPTS,
+  rateLimitBackoffMs,
+} from '../lib/gemini.ts';
 import { AnalysisStore } from '../lib/analysis-store.ts';
 import { CONTEXT_TAGS, fallbackIncidentType } from '../lib/incident-taxonomy.mjs';
 import { assertCompleteBaltimoreRouting, baltimoreRouteForIncidentType } from '../lib/baltimore-311-routing.mjs';
@@ -187,6 +191,7 @@ test('invalid input and missing Vertex credentials fail before provider invocati
 
 test('Vertex HTTP failures are classified without retaining provider messages', async t => {
   configureGemini(t);
+  t.mock.method(Math, 'random', () => 0);
   for (const [status, code] of [[400, 'invalid_request'], [401, 'credentials'], [403, 'credentials'], [404, 'model_unavailable'], [429, 'rate_limited'], [503, 'provider_unavailable']]) {
     const factory = vertexFactory(async () => { throw Object.assign(new Error(`private key=test-key ${status}`), { code: status }); });
     await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg', factory), error => {
@@ -197,6 +202,114 @@ test('Vertex HTTP failures are classified without retaining provider messages', 
       return true;
     });
   }
+});
+
+test('rate-limit backoff uses exponential full jitter and stays capped', () => {
+  assert.equal(rateLimitBackoffMs(0, () => 0), 0);
+  assert.equal(rateLimitBackoffMs(0, () => 1), RATE_LIMIT_BACKOFF_BASE_MS);
+  assert.equal(rateLimitBackoffMs(1, () => 1), RATE_LIMIT_BACKOFF_BASE_MS * 2);
+  assert.equal(rateLimitBackoffMs(0, () => 0.5), RATE_LIMIT_BACKOFF_BASE_MS * 0.5);
+  assert.equal(rateLimitBackoffMs(8, () => 1), RATE_LIMIT_BACKOFF_CAP_MS);
+});
+
+test('Vertex 429s retry with jittered backoff and succeed on a later attempt', async t => {
+  configureGemini(t);
+  t.mock.method(Math, 'random', () => 0);
+  let calls = 0;
+  const factory = vertexFactory(async () => {
+    calls++;
+    if (calls < RATE_LIMIT_MAX_ATTEMPTS) {
+      throw Object.assign(new Error('quota exceeded 429'), { status: 429 });
+    }
+    return { response: aiResponse() };
+  });
+  assert.deepEqual(await GeminiService.analyzeImage(jpeg, 'image/jpeg', factory), result);
+  assert.equal(calls, RATE_LIMIT_MAX_ATTEMPTS);
+});
+
+test('Vertex 429s are not retried past the attempt budget', async t => {
+  configureGemini(t);
+  t.mock.method(Math, 'random', () => 0);
+  let calls = 0;
+  const factory = vertexFactory(async () => {
+    calls++;
+    throw Object.assign(new Error('quota exceeded 429'), { code: 429 });
+  });
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg', factory), error => {
+    assert.ok(error instanceof GeminiAnalysisError);
+    assert.equal(error.code, 'rate_limited');
+    assert.equal(error.httpStatus, 429);
+    return true;
+  });
+  assert.equal(calls, RATE_LIMIT_MAX_ATTEMPTS);
+});
+
+test('non-429 Vertex failures are not retried', async t => {
+  configureGemini(t);
+  t.mock.method(Math, 'random', () => 0);
+  const cases = [
+    [400, 'invalid_request'],
+    [401, 'credentials'],
+    [403, 'credentials'],
+    [404, 'model_unavailable'],
+    [503, 'provider_unavailable'],
+  ];
+  for (const [status, code] of cases) {
+    let calls = 0;
+    const factory = vertexFactory(async () => {
+      calls++;
+      throw Object.assign(new Error(`provider ${status}`), { status });
+    });
+    await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg', factory), { code });
+    assert.equal(calls, 1);
+  }
+
+  let blockedCalls = 0;
+  const blockedFactory = vertexFactory(async () => {
+    blockedCalls++;
+    return { response: { promptFeedback: { blockReason: 'SAFETY' } } };
+  });
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg', blockedFactory), { code: 'blocked_response' });
+  assert.equal(blockedCalls, 1);
+
+  let truncatedCalls = 0;
+  const truncatedFactory = vertexFactory(async () => {
+    truncatedCalls++;
+    return { response: { candidates: [{ finishReason: 'MAX_TOKENS' }] } };
+  });
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg', truncatedFactory), { code: 'output_truncated' });
+  assert.equal(truncatedCalls, 1);
+
+  let invalidCalls = 0;
+  const invalidFactory = vertexFactory(async () => {
+    invalidCalls++;
+    return { response: aiResponse({ ...result, seriousness: 99 }) };
+  });
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg', invalidFactory), { code: 'invalid_response' });
+  assert.equal(invalidCalls, 1);
+});
+
+test('an aborted deadline stops a rate-limit backoff without another provider call', async t => {
+  configureGemini(t);
+  const controller = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', milliseconds => {
+    assert.equal(milliseconds, ANALYSIS_TIMEOUT_MS);
+    return controller.signal;
+  });
+  t.mock.method(Math, 'random', () => 1);
+  let calls = 0;
+  let firstAttempt;
+  const started = new Promise(resolve => { firstAttempt = resolve; });
+  const factory = vertexFactory(async () => {
+    calls++;
+    firstAttempt();
+    throw Object.assign(new Error('quota exceeded 429'), { code: 429 });
+  });
+  const pending = GeminiService.analyzeImage(jpeg, 'image/jpeg', factory);
+  await started;
+  queueMicrotask(() => controller.abort(new DOMException('expired', 'TimeoutError')));
+  await assert.rejects(() => pending, { code: 'timeout' });
+  assert.equal(calls, 1);
 });
 
 test('Vertex timeout wins a pending provider request', async t => {
