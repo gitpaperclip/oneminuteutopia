@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- public mark, matching the rest of the app */
+
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -15,7 +17,6 @@ import {
 } from '@/lib/map-copy';
 import { formatSeverity } from '@/lib/severity';
 import { formatTimestamp } from '@/lib/utils';
-import { AppTopBar } from '@/components/AppTopBar';
 import { MapFilters } from '@/components/map/MapFilters';
 import {
   fetchConfirmation,
@@ -38,8 +39,6 @@ const IncidentMap = dynamic(() => import('@/components/map/IncidentMap'), {
   ),
 });
 
-const STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? '';
-
 export function MapShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -61,7 +60,6 @@ export function MapShell() {
   const loading = waitingForBounds || loadedUrlKey !== urlKey;
   const refreshing = !loading && loadedKey !== queryKey;
   const bboxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const locateRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (bbox) return;
@@ -127,99 +125,81 @@ export function MapShell() {
         : `${pins.length} nearby`;
 
   return (
-    <div className="map-shell">
-      <AppTopBar
-        right={
-          <>
+    <div className={`map-shell${selected ? ' has-sheet' : ''}`}>
+      <div className="map-stage">
+        <IncidentMap
+          incidents={pins}
+          selectedId={selectedId}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setFiltersOpen(false);
+          }}
+          onBounds={onBounds}
+        />
+      </div>
+
+      <header className="map-chrome">
+        <div className="map-chrome-bar">
+          <img src="/logo-mark.png?v=3" alt="" className="map-chrome-logo" width={32} height={32} />
+          <p className="map-chrome-status" aria-live="polite">
+            {statusLabel}
+            {unmapped > 0 ? ` · ${unmapped} without GPS` : ''}
+          </p>
+          <div className="map-chrome-actions">
             <MapFilters
               filters={urlFilters}
               expanded={filtersOpen}
               onToggle={() => setFiltersOpen((open) => !open)}
-              onChange={(next) => {
-                applyFilters(next);
-              }}
+              onChange={applyFilters}
             />
-            <Link href="/" className="app-topbar-text">
+            <Link href="/" className="map-chrome-report">
               {MAP_COPY.report}
             </Link>
-          </>
-        }
-      />
-
-      <div className="map-stage">
-        {STYLE_URL ? (
-          <IncidentMap
-            styleUrl={STYLE_URL}
-            incidents={pins}
-            selectedId={selectedId}
-            onSelect={(id) => {
-              setSelectedId(id);
-              setFiltersOpen(false);
-            }}
-            onBounds={onBounds}
-            locateRef={locateRef}
-          />
-        ) : (
-          <EmptyCard title={MAP_COPY.configErrorTitle} body={MAP_COPY.configErrorBody} />
-        )}
-
-        {STYLE_URL && (
-          <p className="map-status-chip" aria-live="polite">
-            {statusLabel}
-            {unmapped > 0 ? ` · ${unmapped} without GPS` : ''}
-          </p>
-        )}
-
-        {visibleError && (
-          <EmptyCard
-            title={MAP_COPY.apiErrorTitle}
-            body={visibleError}
-            action={
-              <button
-                type="button"
-                className="btn btn-primary btn-block"
-                onClick={() => {
-                  setLoadedKey(null);
-                  setLoadedUrlKey(null);
-                  setRetryTick((tick) => tick + 1);
-                }}
-              >
-                Retry
-              </button>
-            }
-          />
-        )}
-
-        {truncated && !loading && !visibleError && (
-          <p className="map-status-chip" style={{ top: 48 }} role="status">
-            {MAP_COPY.truncated}
-          </p>
-        )}
-
-        {loading && STYLE_URL && (
-          <div className="pointer-events-none absolute inset-0 z-[9] grid place-items-center bg-white/25">
-            <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow">
-              {MAP_COPY.loading}
-            </div>
           </div>
-        )}
+        </div>
+      </header>
 
-        {!loading && !visibleError && visible && visible.length === 0 && STYLE_URL && (
-          <EmptyCard title={MAP_COPY.emptyTitle} body={MAP_COPY.emptyBody} />
-        )}
+      {truncated && !loading && !visibleError && (
+        <p className="map-trunc-chip" role="status">
+          {MAP_COPY.truncated}
+        </p>
+      )}
 
-        {!loading && !visibleError && visible && visible.length > 0 && pins.length === 0 && (
-          <EmptyCard title={MAP_COPY.unmappedTitle} body={unmappedEmptyBody(visible.length)} />
-        )}
+      {visibleError && (
+        <EmptyCard
+          title={MAP_COPY.apiErrorTitle}
+          body={visibleError}
+          action={
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              onClick={() => {
+                setLoadedKey(null);
+                setLoadedUrlKey(null);
+                setRetryTick((tick) => tick + 1);
+              }}
+            >
+              Retry
+            </button>
+          }
+        />
+      )}
 
-        {selected && (
-          <IncidentSheet
-            incident={selected}
-            onClose={() => setSelectedId(null)}
-            onCount={updateConfirmationCount}
-          />
-        )}
-      </div>
+      {!loading && !visibleError && visible && visible.length === 0 && (
+        <EmptyCard title={MAP_COPY.emptyTitle} body={MAP_COPY.emptyBody} />
+      )}
+
+      {!loading && !visibleError && visible && visible.length > 0 && pins.length === 0 && (
+        <EmptyCard title={MAP_COPY.unmappedTitle} body={unmappedEmptyBody(visible.length)} />
+      )}
+
+      {selected && (
+        <IncidentSheet
+          incident={selected}
+          onClose={() => setSelectedId(null)}
+          onCount={updateConfirmationCount}
+        />
+      )}
     </div>
   );
 }
@@ -271,10 +251,10 @@ function IncidentSheet({
   return (
     <aside className="map-sheet">
       <article className="map-sheet-card" role="dialog" aria-labelledby="map-sheet-title">
-        <div className="flex items-start justify-between gap-3">
+        <div className="map-sheet-head">
           <h2 id="map-sheet-title" className="map-sheet-title">{title}</h2>
-          <button type="button" className="text-btn" onClick={onClose}>
-            Close
+          <button type="button" className="map-sheet-close" aria-label="Close" onClick={onClose}>
+            <CloseIcon />
           </button>
         </div>
         {description ? <p className="map-sheet-desc">{description}</p> : null}
@@ -297,7 +277,7 @@ function IncidentSheet({
             <dd>{formatTimestamp(incident.last_reported_at ?? incident.updated_at, 'date')}</dd>
           </div>
           {incident.location_address ? (
-            <div style={{ gridColumn: '1 / -1' }}>
+            <div className="map-sheet-meta-wide">
               <dt>Location</dt>
               <dd>{incident.location_address}</dd>
             </div>
@@ -315,8 +295,7 @@ function IncidentSheet({
           {confirmed ? (
             <button
               type="button"
-              className="text-btn"
-              style={{ display: 'block', margin: '8px auto 0' }}
+              className="text-btn map-confirm-undo"
               disabled={busy}
               onClick={() => void toggle()}
             >
@@ -334,6 +313,20 @@ function IncidentSheet({
   );
 }
 
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+      <path
+        d="M6.4 6.4 17.6 17.6M17.6 6.4 6.4 17.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function EmptyCard({
   title,
   body,
@@ -344,12 +337,12 @@ function EmptyCard({
   action?: ReactNode;
 }) {
   return (
-    <div className="pointer-events-none absolute inset-0 z-[10] grid place-items-center p-4">
-      <div className="pointer-events-auto max-w-md rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-xl">
-        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">{body}</p>
+    <div className="map-empty">
+      <div className="map-empty-card">
+        <h2>{title}</h2>
+        <p>{body}</p>
         {action ?? (
-          <Link href="/" className="btn btn-primary mt-4 inline-block">
+          <Link href="/" className="btn btn-primary btn-block">
             Submit a report
           </Link>
         )}

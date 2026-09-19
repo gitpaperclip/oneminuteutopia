@@ -33,55 +33,58 @@ export function MapFilters({
         {active ? <span className="map-filter-dot" /> : null}
       </button>
       {expanded ? (
-        <form className="map-filter-panel" onSubmit={(event) => event.preventDefault()}>
-          <label className="map-filter-field">
-            <span>Category</span>
-            <select
-              className={selectClass}
-              value={filters.category ?? ''}
-              onChange={(event) => {
-                const category = event.target.value || undefined;
+        <>
+          <button type="button" className="map-filter-backdrop" aria-label="Close filters" onClick={onToggle} />
+          <form className="map-filter-panel" onSubmit={(event) => event.preventDefault()}>
+            <label className="map-filter-field">
+              <span>Category</span>
+              <select
+                className={selectClass}
+                value={filters.category ?? ''}
+                onChange={(event) => {
+                  const category = event.target.value || undefined;
+                  onChange({
+                    ...filters,
+                    category,
+                    incident_type: undefined,
+                  });
+                }}
+              >
+                <option value="">{MAP_COPY.allCategories}</option>
+                {CATEGORY_OPTIONS.map(([value]) => (
+                  <option key={value} value={value}>
+                    {CATEGORY_LABELS[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="map-filter-check">
+              <input
+                type="checkbox"
+                className="size-4 accent-blue-600"
+                checked={!!filters.common_only}
+                onChange={(event) => onChange({ ...filters, common_only: event.target.checked })}
+              />
+              {MAP_COPY.superReportsOnly}
+            </label>
+            <button
+              type="button"
+              className="text-btn"
+              disabled={!active}
+              onClick={() =>
                 onChange({
-                  ...filters,
-                  category,
+                  category: undefined,
                   incident_type: undefined,
-                });
-              }}
+                  tag: undefined,
+                  common_only: false,
+                  limit: filters.limit,
+                })
+              }
             >
-              <option value="">{MAP_COPY.allCategories}</option>
-              {CATEGORY_OPTIONS.map(([value]) => (
-                <option key={value} value={value}>
-                  {CATEGORY_LABELS[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="map-filter-check">
-            <input
-              type="checkbox"
-              className="size-4 accent-blue-600"
-              checked={!!filters.common_only}
-              onChange={(event) => onChange({ ...filters, common_only: event.target.checked })}
-            />
-            {MAP_COPY.superReportsOnly}
-          </label>
-          <button
-            type="button"
-            className="text-btn"
-            disabled={!active}
-            onClick={() =>
-              onChange({
-                category: undefined,
-                incident_type: undefined,
-                tag: undefined,
-                common_only: false,
-                limit: filters.limit,
-              })
-            }
-          >
-            {MAP_COPY.resetFilters}
-          </button>
-        </form>
+              {MAP_COPY.resetFilters}
+            </button>
+          </form>
+        </>
       ) : null}
     </div>
   );
