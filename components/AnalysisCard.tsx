@@ -7,7 +7,6 @@ import { formatUnitScore } from '@/lib/incident-scoring';
 export interface AnalysisCardProps {
   category: string;
   seriousness: number | null;
-  ai_confidence: number;
   case_score?: number | null;
   onContinue: () => void;
 }
@@ -15,46 +14,36 @@ export interface AnalysisCardProps {
 export function AnalysisCard({
   category,
   seriousness,
-  ai_confidence,
   case_score,
   onContinue,
 }: AnalysisCardProps) {
   const style = severityStyle(seriousness);
   const label = CATEGORY_LABELS[category] ?? category.replaceAll('_', ' ');
-  const confidencePct = ai_confidence > 1
-    ? Math.round(Math.max(0, Math.min(100, ai_confidence)))
-    : Math.round(Math.max(0, Math.min(1, ai_confidence)) * 100);
 
   return (
     <div
-      className="analysis-popup"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="analysis-title"
+      className="analysis-panel"
       style={{ ['--sev-accent' as string]: style.accent, ['--sev-fill' as string]: style.fill }}
     >
-      <div className="analysis-card">
-        <p className="analysis-kicker">AI look</p>
-        <h2 id="analysis-title" className="analysis-category">{label}</h2>
-        <div className="analysis-score-row">
-          <div className="analysis-score" aria-label={`Severity ${formatSeverity(seriousness)}`}>
-            <span className="analysis-score-num">
-              {seriousness == null ? '—' : Math.round(seriousness)}
-            </span>
-            <span className="analysis-score-den">/10</span>
-          </div>
-          <div className="analysis-meta">
-            <span className="analysis-tone">{style.label}</span>
-            <span className="analysis-conf">{confidencePct}% conf.</span>
-            {case_score != null ? (
-              <span className="analysis-conf">Case {formatUnitScore(case_score)}</span>
-            ) : null}
-          </div>
+      <p className="analysis-kicker">Assessment</p>
+      <h2 id="analysis-title" className="analysis-category">{label}</h2>
+      <div className="analysis-score-row">
+        <div className="analysis-score" aria-label={`Severity ${formatSeverity(seriousness)}`}>
+          <span className="analysis-score-num">
+            {seriousness == null ? '—' : Math.round(seriousness)}
+          </span>
+          <span className="analysis-score-den">/10</span>
         </div>
-        <button type="button" className="btn btn-primary" onClick={onContinue}>
-          Continue
-        </button>
+        <div className="analysis-meta">
+          <span className="analysis-tone">{style.label}</span>
+          {case_score != null ? (
+            <span className="analysis-conf">Case {formatUnitScore(case_score)}</span>
+          ) : null}
+        </div>
       </div>
+      <button type="button" className="btn btn-primary btn-block" onClick={onContinue}>
+        Continue
+      </button>
     </div>
   );
 }

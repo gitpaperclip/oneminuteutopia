@@ -1,12 +1,14 @@
 # Baltimore civic reporting catalog
 
+This is the longer agency narrative. Receipt **Contacts** copy (department `note`, phones, `reportUrl`) is edited in `lib/baltimore-routes.ts`. Map sheet chrome lives in `lib/map-copy.ts`.
+
 This catalog is the starting point for Baltimore City routing in One Minute Utopia. It maps what a resident can observe to the agency or service that normally owns the next action. It is designed for triage, links, and a human-confirmed handoff; it is not a substitute for emergency dispatch, an official inspection, a police investigation, medical advice, or legal advice.
 
 ## Safety rules for the app
 
 - **Immediate danger, active fire, smoke, explosion, person in danger, serious injury, violence in progress, gas odor, downed energized wire, or a live traffic hazard:** tell the resident to call **911**. Do not wait for image analysis or submit an automated form.
 - **Urgent but not life-threatening:** show the owner and the Baltimore 311 option, with a phone call preferred when delay could increase harm.
-- **Routine city service:** route to **Baltimore 311**. The 311 system is the citywide intake and work-order system for non-emergency service requests; it can be reached by dialing 311 inside the city or through the [Baltimore 311 portal](https://balt311.baltimorecity.gov/).
+- **Routine city service:** route to **Baltimore 311**. The 311 system is the citywide intake and work-order system for non-emergency service requests; it can be reached by dialing 311 inside the city or through the [Baltimore 311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/).
 - **Crime:** use BPD’s reporting rules. Online or telephone reporting is for eligible non-emergency incidents; known suspects, witnesses, recent/in-progress incidents, injuries, threats, hate/bias crimes, and evidence needs require the appropriate police response. See [BPD file a police report](https://www.baltimorepolice.org/file-police-report).
 - **Health, housing, or personal-services reports may contain sensitive information.** The app should minimize names, medical details, faces, license plates, and interior-home imagery. Never send a photo or form automatically without the user seeing and confirming the destination and payload.
 - **Do not infer the owner only from an image.** Ask for location, public/private ownership, whether the condition is active, and whether anyone is at risk. If ownership is uncertain, route to 311 for triage.
@@ -18,9 +20,9 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 
 **Use for:** potholes, sidewalks, street conditions, traffic signs and signals, streetlights, missed trash or recycling, illegal dumping, graffiti, dead animals, fallen trees, drainage and flooding complaints, abandoned vehicles, parking and many other non-emergency city services.
 
-**Handoff:** [Baltimore 311 portal](https://balt311.baltimorecity.gov/) · dial **311** within Baltimore City or **410-396-5352** from outside the city.
+**Handoff:** [Baltimore 311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) · [311 services overview](https://www.baltimorecity.gov/311services) · dial **311** within Baltimore City or **443-263-2220** from outside the city.
 
-**App behavior:** 311 should be the fallback destination when more specific ownership is uncertain. Preserve the city’s service-request link and any returned CSR number.
+**App behavior:** 311 should be the fallback destination when more specific ownership is uncertain and when a department has no dedicated public form. Preserve the city’s service-request link and any returned CSR number. This app never files with Baltimore City.
 
 ## City departments and offices
 
@@ -28,7 +30,7 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 
 **Emergency:** active fire, smoke, explosion, rescue, hazardous-material release, carbon-monoxide symptoms, serious injury, or a person needing emergency medical care → **911**.
 
-**Routine or prevention-related issues:** blocked fire exits, unsafe fire lanes, missing or damaged fire extinguishers in a public/commercial setting, fire-code concerns, smoke-alarm education, repeated false alarms, fireworks complaints, or a suspected hazardous-material condition that is not actively threatening people. Start with [Baltimore 311](https://balt311.baltimorecity.gov/) or the [Baltimore City Fire Department](https://fire.baltimorecity.gov/) for the current non-emergency contact and inspection route.
+**Routine or prevention-related issues:** blocked fire exits, unsafe fire lanes, missing or damaged fire extinguishers in a public/commercial setting, fire-code concerns, smoke-alarm education, repeated false alarms, fireworks complaints, or a suspected hazardous-material condition that is not actively threatening people. There is no dedicated BCFD public report form. Start with the [Baltimore 311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) or the [BCFD contact page](https://www.baltimorecity.gov/fire/contact) (non-emergency **410-396-5680**).
 
 **Image categories:** `fire_injury_or_immediate_threat`, `electricity_and_gas`, `buildings_and_construction`.
 
@@ -48,7 +50,7 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 
 ### Baltimore City Department of Public Works (DPW)
 
-**Solid waste and sanitation:** illegal dumping, overflowing public trash, missed trash or recycling, bulk-trash issues, litter, waste in an alley, dead animal on a public right-of-way, street sweeping, and sanitation conditions → [DPW](https://publicworks.baltimorecity.gov/) or [Baltimore 311](https://balt311.baltimorecity.gov/).
+**Solid waste and sanitation:** illegal dumping, overflowing public trash, missed trash or recycling, bulk-trash issues, litter, waste in an alley, dead animal on a public right-of-way, street sweeping, and sanitation conditions → [DPW](https://publicworks.baltimorecity.gov/) directs residents to [Baltimore 311](https://balt311.baltimorecity.gov/citizen/s/). DPW has no separate public intake form.
 
 **Water and wastewater:** water-main break, leaking hydrant, low water pressure, sewer backup, manhole problem, sewage discharge, storm-drain obstruction, standing water, flooding, and suspected water contamination → DPW/311. A main break, sewage release, or flooding that threatens life or property should be called in immediately; use **911** if there is immediate danger.
 
@@ -60,7 +62,7 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 
 ### Baltimore City Department of Transportation (BCDOT)
 
-**Use for:** potholes, damaged or missing signs, traffic-signal malfunction, streetlight outage, unsafe crosswalk, damaged curb or sidewalk in the public right-of-way, roadway debris, guardrail or bridge condition, lane-marking problem, bike-lane obstruction, traffic-calming request, and accessibility problems in the transportation right-of-way → [BCDOT](https://transportation.baltimorecity.gov/) or [Baltimore 311](https://balt311.baltimorecity.gov/).
+**Use for:** potholes, damaged or missing signs, traffic-signal malfunction, streetlight outage, unsafe crosswalk, damaged curb or sidewalk in the public right-of-way, roadway debris, guardrail or bridge condition, lane-marking problem, bike-lane obstruction, traffic-calming request, and accessibility problems in the transportation right-of-way → [BCDOT](https://transportation.baltimorecity.gov/) and its [How Do I? FAQ](https://transportation.baltimorecity.gov/transportation-faq) send every request to [Baltimore 311](https://balt311.baltimorecity.gov/citizen/s/). There is no dedicated BCDOT public form.
 
 **Emergency:** a signal failure, fallen object, sinkhole, collision obstruction, or roadway condition creating immediate danger → **911** first, then 311/transportation follow-up.
 
@@ -70,7 +72,7 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 
 ### Baltimore City Department of Housing and Community Development (DHCD) / Code Enforcement
 
-**Use for:** unsafe or vacant buildings, dangerous structural conditions, exterior housing-code violations, no heat, lack of water, severe leaks, vermin or trash conditions tied to a property, illegal occupancy, construction without permits, blocked egress in a dwelling, property-maintenance violations, and suspected code violations → [Baltimore Housing](https://dhcd.baltimorecity.gov/) and [Baltimore 311](https://balt311.baltimorecity.gov/).
+**Use for:** unsafe or vacant buildings, dangerous structural conditions, exterior housing-code violations, no heat, lack of water, severe leaks, vermin or trash conditions tied to a property, illegal occupancy, construction without permits, blocked egress in a dwelling, property-maintenance violations, and suspected code violations → [DHCD Code Enforcement](https://www.baltimorecity.gov/dhcd/property-maintenance-and-code-enforcement) and [Baltimore 311](https://balt311.baltimorecity.gov/citizen/s/). DHCD tells residents to dial 311 to start an inspection.
 
 **Emergency:** collapse risk, exposed live wiring, gas leak, fire, or immediate threat to occupants → **911**. A tenant should not enter an unsafe structure to obtain a photograph.
 
@@ -88,7 +90,7 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 
 ### Baltimore City Health Department (BCHD)
 
-**Environmental health and public complaints:** rodents, cockroaches, unsafe food handling, restaurant or grocery sanitation, sewage or human-waste exposure, illegal dumping with public-health impact, mold or lead concerns, tattoo/body-art facility concerns, pool or spa sanitation, daycare or group-home sanitation, dead animals or animal-bite follow-up, and other environmental-health complaints → [Baltimore City Health Department](https://health.baltimorecity.gov/) and its environmental-health information.
+**Environmental health and public complaints:** rodents, cockroaches, unsafe food handling, restaurant or grocery sanitation, sewage or human-waste exposure, illegal dumping with public-health impact, mold or lead concerns, tattoo/body-art facility concerns, pool or spa sanitation, daycare or group-home sanitation, dead animals or animal-bite follow-up, and other environmental-health complaints → [Baltimore City Health Department](https://health.baltimorecity.gov/), [nuisance complaint investigations](https://health.baltimorecity.gov/nuisance-complaint-investigations), and [Animal Services](https://www.baltimorecity.gov/health/our-work/animal-services). Public complaint intake is [Baltimore 311](https://balt311.baltimorecity.gov/citizen/s/).
 
 **Food facilities:** use the Health Department’s current food-protection complaint route; do not present an image as proof of contamination. Include establishment name, address, observed condition, date/time, and whether anyone became ill.
 
@@ -100,7 +102,7 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 
 ### Baltimore City Recreation and Parks
 
-**Use for:** damaged playground equipment, unsafe athletic fields, park lighting, fallen limbs or trees in parks, trail hazards, dangerous glass or debris, damaged benches or facilities, illegal dumping in parks, and accessibility barriers in parks → [Baltimore City Recreation and Parks](https://bcrp.baltimorecity.gov/) or 311.
+**Use for:** damaged playground equipment, unsafe athletic fields, park lighting, fallen limbs or trees in parks, trail hazards, dangerous glass or debris, damaged benches or facilities, illegal dumping in parks, and accessibility barriers in parks → [Baltimore City Recreation and Parks](https://bcrp.baltimorecity.gov/) or [Forestry & Tree Services](https://www.baltimorecity.gov/bcrp/baltimore-city-forestry-tree-services). Park and tree hazards are reported through [Baltimore 311](https://balt311.baltimorecity.gov/citizen/s/).
 
 **Emergency:** active injury, fire, violence, or a tree/structure creating immediate danger → **911**.
 
@@ -192,7 +194,7 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 
 ### Baltimore Gas and Electric (BGE)
 
-**Use for:** downed power lines, power outages, gas odor, damaged utility equipment, or suspected gas/electric infrastructure. Call BGE’s emergency number shown on its current [outage and safety page](https://www.bge.com/) and call **911** for immediate danger. Never approach or touch a downed line.
+**Use for:** downed power lines, power outages, gas odor, damaged utility equipment, or suspected gas/electric infrastructure. Use BGE’s [outage and safety page](https://www.bge.com/outages-and-safety) and [report an outage](https://secure.bge.com/powerOutages/) (or **877-778-2222** for outages / downed lines, **800-685-0123** for gas odor). Call **911** for immediate danger. Never approach or touch a downed line.
 
 ### Maryland Public Service Commission
 
@@ -205,6 +207,23 @@ This catalog is the starting point for Baltimore City routing in One Minute Utop
 **988:** behavioral-health crisis and suicide crisis support when there is no immediate physical danger; call 911 when there is an immediate threat to life or safety.
 
 **211 Maryland:** health and human-service navigation, shelter, food, utilities, and social-service referrals → [211 Maryland](https://211md.org/).
+
+## Official public report URLs by app category
+
+These are the links `lib/baltimore-routes.ts` uses for the analysis-page chip and receipt “Report” action. Prefer the agency’s own public form when one exists; otherwise use the 311 citizen portal. Last verified 2026-09-19. Opening a link is not a city filing.
+
+| App category | Likely agency | Official report / entry URL | Notes |
+|---|---|---|---|
+| Roads and sidewalks | BCDOT | [311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) | BCDOT has no dedicated form; FAQ sends potholes, sidewalks, and street repairs to 311. |
+| Traffic signals and streetlights | BCDOT | [311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) | Signal and streetlight outages are 311 requests. Immediate traffic danger → 911. |
+| Trash and sanitation | DPW Solid Waste | [311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) | DPW’s public site tells residents to report problems with 311. |
+| Water, drainage, sewage | DPW Water & Wastewater | [311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) | Water emergencies also **410-396-5352**. Immediate danger → 911. |
+| Trees and public spaces | Recreation & Parks | [311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) | Forestry and park hazards are 311. [Tree services](https://www.baltimorecity.gov/bcrp/baltimore-city-forestry-tree-services). |
+| Buildings and construction | DHCD Code Enforcement | [311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) | [Code enforcement](https://www.baltimorecity.gov/dhcd/property-maintenance-and-code-enforcement) starts inspections via 311. |
+| Electricity and gas | BGE | [Report an outage](https://secure.bge.com/powerOutages/) | Also [outages and safety](https://www.bge.com/outages-and-safety). Gas odor / downed line: BGE + 911. |
+| Animals | BCHD Animal Services | [311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) | [Animal Services](https://www.baltimorecity.gov/health/our-work/animal-services) takes complaints through 311. Attack in progress → 911. |
+| Fire, injury, immediate threat | 911 / BCFD / BPD | **tel:911** · [311](https://balt311.baltimorecity.gov/citizen/s/) · [BPD file a report](https://www.baltimorepolice.org/file-police-report) | BCFD has no public incident form; non-emergency [contact](https://www.baltimorecity.gov/fire/contact) is **410-396-5680**. |
+| Other hazard / no visible hazard / unable to assess | Baltimore 311 | [311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/) | Fallback when ownership is unclear. |
 
 ## Routing taxonomy for the app
 
@@ -254,14 +273,22 @@ Every recommendation should carry `jurisdiction`, `owner`, `reason`, `urgency`, 
 
 ## Verification sources
 
-- [Baltimore 311](https://balt311.baltimorecity.gov/)
+- [Baltimore 311 citizen portal](https://balt311.baltimorecity.gov/citizen/s/)
+- [Baltimore 311 services](https://www.baltimorecity.gov/311services)
 - [Baltimore City agency directory and budget organization](https://bbmr.baltimorecity.gov/sites/default/files/upload/FY2026%20Agency%20Detail%20Volume%20II.pdf)
 - [Baltimore Police: file a police report](https://www.baltimorepolice.org/file-police-report)
 - [Baltimore City Department of Public Works](https://publicworks.baltimorecity.gov/)
 - [Baltimore City Department of Transportation](https://transportation.baltimorecity.gov/)
-- [Baltimore Housing / DHCD](https://dhcd.baltimorecity.gov/)
+- [BCDOT How Do I?](https://transportation.baltimorecity.gov/transportation-faq)
+- [DHCD property maintenance and code enforcement](https://www.baltimorecity.gov/dhcd/property-maintenance-and-code-enforcement)
 - [Baltimore City Health Department](https://health.baltimorecity.gov/)
+- [BCHD Animal Services](https://www.baltimorecity.gov/health/our-work/animal-services)
 - [Baltimore City Recreation and Parks](https://bcrp.baltimorecity.gov/)
+- [BCRP forestry and tree services](https://www.baltimorecity.gov/bcrp/baltimore-city-forestry-tree-services)
+- [Baltimore City Fire Department](https://www.baltimorecity.gov/fire)
+- [BCFD contact](https://www.baltimorecity.gov/fire/contact)
+- [BGE outages and safety](https://www.bge.com/outages-and-safety)
+- [BGE report an outage](https://secure.bge.com/powerOutages/)
 - [Baltimore OEM](https://emergency.baltimorecity.gov/)
 - [Baltimore City Office of Equity and Civil Rights](https://civilrightsequity.baltimorecity.gov/)
 - [Baltimore City OIG](https://oig.baltimorecity.gov/)

@@ -10,9 +10,10 @@ const migrations = await Promise.all([
   '202609190002_incident_context_and_clustering.sql',
   '202609190003_baltimore_311_routing.sql',
   '202609190004_mock_government_submission.sql',
-  '202609190005_mock_agency.sql',
-  '202609190006_reports_realtime.sql',
-  '202609190007_incident_scoring.sql',
+  '202609190005_incident_confirmations.sql',
+  '202609190006_mock_agency.sql',
+  '202609190007_reports_realtime.sql',
+  '202609190008_incident_scoring.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Historical fixtures intentionally do not derive their schema from the new migrations.
@@ -136,6 +137,7 @@ test('upgrading main preserves legacy records and timestamps while supporting th
     mock_reference_id: null, mock_submitted_at: null, mock_status: 'pending', mock_error: null,
     mock_agency: null,
     incident_score: 0, report_count: 1, government_report_status: 'not_ready',
+    confirmation_count: 0,
   });
   assert.deepEqual((await db.query('SELECT * FROM sessions')).rows[0], oldSession);
   assert.deepEqual((await db.query('SELECT * FROM status_events')).rows[0], oldEvent);
@@ -150,7 +152,7 @@ test('upgrading main preserves legacy records and timestamps while supporting th
 
   for (const role of ['anon', 'authenticated']) {
     await db.exec(`SET ROLE ${role}`);
-    for (const table of ['reports', 'incidents', 'sessions', 'status_events', 'request_limits', 'image_analyses']) {
+    for (const table of ['reports', 'incidents', 'sessions', 'status_events', 'request_limits', 'image_analyses', 'incident_confirmations']) {
       await assert.rejects(db.query(`SELECT * FROM ${table}`), /permission denied/);
     }
     await db.exec('RESET ROLE');

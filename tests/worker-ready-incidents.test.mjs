@@ -30,6 +30,11 @@ test('worker files when incident_score meets the government threshold', () => {
   assert.equal(skipReason(incident()), null);
 });
 
+test('worker files a clustered non-emergency incident with GPS and no mock confirmation', () => {
+  assert.equal(isReadyForMockFiling(incident()), true);
+  assert.equal(skipReason(incident()), null);
+});
+
 test('worker skips incidents below the government score threshold', () => {
   const row = incident({ incident_score: 0.19, government_report_status: 'not_ready', evidence_count: 1 });
   assert.equal(isReadyForMockFiling(row), false);
@@ -41,6 +46,25 @@ test('worker files a single severe incident above the threshold', () => {
     evidence_count: 1,
     incident_score: 0.855,
     government_report_status: 'ready_to_submit',
+  });
+  assert.equal(isReadyForMockFiling(row), true);
+});
+
+test('worker falls back to evidence_count when incident_score is missing', () => {
+  const row = incident({
+    incident_score: null,
+    government_report_status: 'not_ready',
+    evidence_count: 1,
+  });
+  assert.equal(isReadyForMockFiling(row), false);
+  assert.match(skipReason(row) ?? '', /evidence_count 1/);
+});
+
+test('worker files on evidence_count when score is missing and the cluster exists', () => {
+  const row = incident({
+    incident_score: null,
+    government_report_status: 'not_ready',
+    evidence_count: 2,
   });
   assert.equal(isReadyForMockFiling(row), true);
 });

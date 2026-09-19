@@ -108,7 +108,7 @@ async function main() {
       }
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         console.error(
-          'Realtime listen failed. Apply supabase/migrations/202609190006_reports_realtime.sql and enable Realtime for public.reports in the Supabase dashboard.',
+          'Realtime listen failed. Apply supabase/migrations/202609190007_reports_realtime.sql and enable Realtime for public.reports in the Supabase dashboard.',
         );
         if (err) console.error(err);
       }

@@ -125,3 +125,18 @@ export class BaltimoreRoutingService {
     return code.replace(/^[A-Z]+-/, '').replace(/-/g, ' ');
   }
 }
+
+/** Payload a 311 intake app would consume. Omits portal-nag copy. */
+export function toIntegrationPayload(prepared: PreparedReport) {
+  return {
+    report_id: prepared.report_id,
+    readiness: prepared.readiness,
+    service_code: prepared.service_code,
+    service_options: prepared.service_options,
+    jurisdiction: prepared.jurisdiction,
+    owner: prepared.owner,
+    phone: prepared.phone,
+    last_verified: prepared.last_verified,
+    prepared_fields: prepared.prepared_fields ?? null,
+  };
+}

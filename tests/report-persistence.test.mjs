@@ -10,9 +10,10 @@ const migrations = await Promise.all([
   '202609190002_incident_context_and_clustering.sql',
   '202609190003_baltimore_311_routing.sql',
   '202609190004_mock_government_submission.sql',
-  '202609190005_mock_agency.sql',
-  '202609190006_reports_realtime.sql',
-  '202609190007_incident_scoring.sql',
+  '202609190005_incident_confirmations.sql',
+  '202609190006_mock_agency.sql',
+  '202609190007_reports_realtime.sql',
+  '202609190008_incident_scoring.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Run production tagged SQL against an isolated PostgreSQL engine, including its real transactions.

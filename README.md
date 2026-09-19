@@ -1,26 +1,48 @@
 # One Minute Utopia
 
-A camera-first civic reporting app built for HopHacks 2026. Take or upload a photo,
-review an initial AI assessment, confirm the location, and save a report with a
-durable receipt. No account is required.
+One Minute Utopia is a camera-first civic reporting prototype built for HopHacks
+2026. A resident photographs a public issue, receives a server-generated AI
+assessment, confirms the location and details, and saves a durable report. Nearby
+reports of the same issue can be grouped into one stronger community signal.
 
-The current build focuses on image reporting and analysis. It does not send
-reports to a city or emergency service, schedule work, or promise that someone
-will act on a report.
+No account is required. The current project is a Baltimore-focused demonstration;
+it does **not** submit to Baltimore 311, dispatch emergency services, or promise a
+government response.
+
+## What the demo does
+
+- Captures a new photo or accepts an existing image.
+- Compresses the image in the browser, then validates and normalizes it again on
+  the server to reduce upload time and model input size.
+- Uses Gemini on Vertex AI to return a broad category, normalized incident type,
+  seriousness, confidence, a short visual summary, and allowlisted context tags.
+- Stores the photo and server-owned analysis in Supabase. Browser-supplied AI
+  scores are never trusted during submission.
+- Routes normalized incident types to Baltimore 311 service candidates or to
+  emergency/manual-review guidance.
+- Creates a durable report receipt and prepares a human-reviewed Baltimore handoff.
+- Groups same-type reports whose GPS accuracy circles overlap (2× reported
+  accuracy, clamped 25–250m) within 72 hours, including through a chain of
+  overlaps, into one "super-report".
+- Shows saved incidents on a public Leaflet/OpenStreetMap map and lets a visitor
+  add one reversible "I see this too" confirmation per browser session.
+- Includes an optional local Playwright worker that files score-ready clusters
+  into mock government forms (City 311 or Riverton DOT).
+
+If AI analysis is unavailable, the photo is retained with an explicit unavailable
+status and the resident can finish a manual report. An unavailable assessment is
+never displayed as zero risk.
 
 ## Reporting flow
 
-1. Take a photo with the rear camera, or select an existing image.
-2. The browser prepares a smaller image for upload. The server validates and
-   normalizes it again before storage or analysis.
-3. Supabase photo storage and Gemini analysis run concurrently. Gemini returns
-   category, initial seriousness (0–10), and AI confidence (0–100).
-4. Review the saved assessment and correct the category if needed. Confirm GPS
-   location or enter an address or landmark; add optional details.
-5. Submit. The server loads the session-owned assessment and saves the report
-   atomically. Same-type reports whose GPS accuracy circles overlap (2× the
-   reported accuracy, 25–250m) join one incident, including through a chain of
-   overlaps, within 72 hours. The receipt appears only after persistence succeeds.
+1. Take a photo or choose one from the device.
+2. The browser compresses it; the server validates, strips metadata, normalizes,
+   stores, and analyzes it.
+3. Review the suggested issue category and complete the location and optional
+   description.
+4. Submit the report. The server reloads the saved analysis, derives the trusted
+   subtype and routing, and atomically creates or joins an incident.
+5. Open the durable receipt, Baltimore reporting destination, or public map.
 
 A separate local worker (`npm run worker`) listens for new rows on
 `public.reports`. When an incident's combined score reaches 0.75, it files that
@@ -30,32 +52,41 @@ minor issues need several independent reporters. Roads, sidewalks, and
 streetlights go to the Riverton DOT mock; other non-emergency issues go to the
 City 311 mock. It does not call Baltimore 311.
 
-If Gemini is unavailable, the photo and an explicitly unavailable assessment are
-saved so that manual reporting remains usable. An unavailable assessment is
-never presented as zero risk.
+The emergency guardrail treats active fires, visible serious injuries, downed
+power lines, and similar immediate threats as 911-first situations rather than
+ordinary 311 requests.
 
-## Stack
+## Architecture
 
-- Next.js 16 App Router, React 19, TypeScript, and Tailwind CSS 4.
-- Supabase Postgres for sessions, saved analyses, and reports.
-- Supabase Storage for report photos.
-- Google Gemini for structured image analysis, called only by the server.
+- **Web:** Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4
+- **AI:** Gemini 3.8 Flash through Google Cloud Vertex AI, called only by the server
+- **Data:** Supabase Postgres for sessions, analyses, reports, incidents, routing,
+  confirmations, scoring, and mock filing status
+- **Images:** Supabase Storage with client and server image normalization
+- **Map:** Leaflet with public OpenStreetMap raster tiles
+- **Demo automation:** a local Playwright worker for the mock government website
 
-## Baltimore 311 integration (in progress)
+The AI response uses a constrained provider schema and a stricter server validator.
+The request has an 18-second deadline and retries Vertex HTTP 429 responses with
+bounded exponential jitter. A provider failure falls back to manual reporting.
 
-The prepared-report contract is **frozen** in `lib/prepared-report-types.ts`.
-This defines the shared interface for:
+## Baltimore scope and limitations
 
-- Phase 1 image analysis (implemented)
-- Baltimore 311 routing logic (to be implemented by Agent B)
-- Review and submission UI
+The backend has a normalized incident taxonomy and maps each subtype to observed
+Baltimore 311 service types. `GET /api/reports/{id}/prepare-311` builds a preview
+packet and applies emergency guardrails. It is **prepare-only**: it does not prove
+that Baltimore accepted a service request.
 
-**Current status:** Photo reporting, AI analysis, and durable receipts are
-working. Baltimore 311 service matching, emergency guardrails, and incident
-clustering are planned for subsequent PRs.
+The Baltimore mobile app and authenticated intake do not expose a public write API
+that this prototype can safely call. The UI therefore links residents to the
+appropriate official destination and keeps the user responsible for reviewing and
+submitting the city form. The Playwright worker targets only the mock demo sites;
+its reference number is not a Baltimore case number.
 
-See [docs/priority-0-findings.md](docs/priority-0-findings.md) for the full
-implementation status, test results, and contract documentation.
+The overlapping-circle / 72-hour grouping values are hackathon defaults. A
+production system would tune them by incident type, add moderation and retention
+policies, geocode manually entered addresses, and establish a formal city
+integration.
 
 **Hard constraint:** The app does NOT call live Baltimore 311 APIs. All 311
 integration is prepare-only (packet generation, form preview, link generation).
@@ -64,9 +95,13 @@ Users must manually confirm and submit through the city's portal. Never claim
 proof of city acceptance. The Playwright worker files only to the mock
 government demo sites (City 311 and Riverton DOT).
 
+See [docs/incident-intelligence.md](docs/incident-intelligence.md),
+[docs/baltimore-reporting-catalog.md](docs/baltimore-reporting-catalog.md), and
+[docs/map.md](docs/map.md) for the detailed contracts.
+
 ## Local setup
 
-Use Node.js 22 or newer. The analysis tests use Node's TypeScript stripping.
+Use Node.js 22 or newer.
 
 ```sh
 npm ci
@@ -74,66 +109,56 @@ cp .env.example .env.local
 ```
 
 In PowerShell, use `Copy-Item .env.example .env.local` for the second command.
-Fill in the configuration with values from your own project:
 
-- `DATABASE_URL`: Supabase Postgres connection string. For a serverless host,
-  use the transaction pooler connection from the Supabase dashboard; the database
-  client disables prepared statements for compatibility with that pooler.
-- `NEXT_PUBLIC_SUPABASE_URL`: the project's Supabase URL.
-- `SUPABASE_SERVICE_ROLE_KEY`: the server-only Supabase service role key.
-- `GEMINI_API_KEY`: the server-only Gemini key.
-- `GEMINI_MODEL`: optional model override; see `.env.example` and
-  `lib/gemini.ts` for the configured default.
+Configure:
 
-The API URL and database connection must belong to the same Supabase project.
-Never put service or Gemini keys in `NEXT_PUBLIC_*` variables or commit
-`.env.local`. A browser anonymous key is not required by this reporting flow.
+- `DATABASE_URL`: Supabase transaction-pooler Postgres URL. URL-encode reserved
+  characters in the password.
+- `NEXT_PUBLIC_SUPABASE_URL`: URL for the same Supabase project.
+- `SUPABASE_SERVICE_ROLE_KEY`: server-only service-role key for that project.
+- `GOOGLE_CLOUD_PROJECT`: Google Cloud project with Vertex AI enabled.
+- `GOOGLE_CLOUD_LOCATION`: use `global` for the current Gemini 3.8 deployment.
+- `GOOGLE_SERVICE_ACCOUNT_JSON`: the complete service-account JSON object as a
+  server-only environment value. For local development, a file path in
+  `GOOGLE_APPLICATION_CREDENTIALS` is also supported.
+- `GEMINI_MODEL`: optional model override; the current default is
+  `gemini-3.8-flash`.
 
-### Database and photo storage
+`GEMINI_API_KEY` belongs to the older Gemini Developer API setup and is not used by
+the current Vertex AI implementation. Never expose service-account JSON or the
+Supabase service-role key through a `NEXT_PUBLIC_*` variable or commit them.
 
-1. Review and apply the migrations in filename order using the Supabase SQL
-   editor or your normal migration workflow:
-   `supabase/migrations/202609190000_reporting.sql`, then
-   `supabase/migrations/202609190001_image_analyses.sql`, then the later
-   clustering, routing, and mock-submission migrations in filename order.
-   They contain the base reporting schema and analysis table, with row-level
-   security and server access. Tables are **not** created by API requests.
-2. Create a Supabase Storage bucket named `report-photos` and enable public read
-   access. Uploads use the server credential. Photo URLs can be opened by anyone
-   who has the URL; use consented public-space images for the demo.
-3. Configure the same environment variables on the deployment host before
-   deploying.
-
-If you already applied the ZIP's original analysis migration, rerun the updated
-`202609190001_image_analyses.sql` as SQL to add its new status column; migration
-tools may otherwise skip a filename they previously recorded. The file supports
-reapplication.
+Apply every SQL migration in `supabase/migrations/` in filename order. Then create
+a public-read Supabase Storage bucket named `report-photos`. The bucket is written
+with the server credential; anyone with a photo URL can open it.
 
 ```sh
 npm run dev
 ```
 
-In a second terminal, after Chromium is installed for Playwright:
+Open `http://localhost:3000`. Camera and location permissions require HTTPS on a
+physical phone, so use the deployed site or an HTTPS development tunnel. File
+upload and manual location entry are available when permissions are denied.
+
+### Optional mock filing worker
+
+The worker runs locally and does not run on Vercel:
 
 ```sh
 npx playwright install chromium
 npm run worker
 ```
 
-The worker reads the same `.env.local` as the app. On startup it checks existing
+It reads the same `.env.local` as the app. On startup it checks existing
 incidents once, then waits for new `public.reports` inserts instead of polling
 every 10 seconds. A visible browser opens only for non-emergency incidents whose
-incident score is at least 0.75 and that have not already been filed. Road and streetlight clusters open
-the transportation mock; litter and other civic issues open the general 311
-mock. Playwright will not run on Vercel. Apply
-`202609190006_reports_realtime.sql` so Supabase Realtime publishes `reports`.
+incident score is at least 0.75 and that have not already been filed. Road and
+streetlight clusters open the transportation mock; litter and other civic issues
+open the general 311 mock. Apply `202609190007_reports_realtime.sql` so Supabase
+Realtime publishes `reports`. Set `MOCK_GOVERNMENT_URL` or
+`MOCK_TRANSPORTATION_URL` if a demo form is hosted at a different address.
 
-Open `http://localhost:3000`. On a physical phone, use an HTTPS deployment or
-an HTTPS development tunnel; camera and location permissions require a secure
-context. File upload and manual location entry are available when permissions
-are denied.
-
-## Checks
+## Verification
 
 ```sh
 npm run test:analysis
@@ -142,81 +167,76 @@ npm run typecheck
 npm run build
 ```
 
-`/api/health` checks configuration and database connectivity. It does not prove
-that a Gemini request, photo upload, or full report submission succeeds. Run the
-real reporting flow to validate those services.
+`GET /api/health` verifies the database schema, storage configuration, and presence
+of Vertex configuration. It does not make a billable model request, upload a photo,
+or complete a report. Validate the deployed system with the real reporting flow.
 
-Automated tests use mocked external services. Passing local checks is evidence
-for the implementation, not proof of deployed credentials, applied migrations,
-phone compatibility, or measured end-to-end latency.
+Before a demo, verify:
 
-The project's credentials are configured in Vercel, not in this local checkout.
-The implementation work does not verify those secret values or run live Gemini
-and Supabase checks. Add a separate local development configuration if needed.
+1. Two consecutive photos return a completed AI assessment.
+2. A report survives a receipt refresh.
+3. Two nearby reports of the same type join one super-report.
+4. The incident appears on `/map` and "I see this too" can be added and removed.
+5. Emergency imagery shows 911-first guidance.
+6. The mock worker runs locally if mock filing is part of the presentation.
 
-## Phase 1 acceptance
+Automated tests mock external services. Passing them confirms the application
+contracts, not deployed credentials, quotas, migrations, or phone permissions.
 
-The requested Phase 1 scope is the reporting page, saved AI analysis, and durable
-receipt. The original planning PDF is reference material; its triage and
-community-action features are outside this build.
+## Public data and privacy
 
-On the deployed HTTPS site, complete these checks before calling Phase 1
-demonstrated:
-
-- Submit three consecutive reports: one camera capture, one file upload, and
-  one with location permission denied and a manually entered location.
-- Refresh each receipt and confirm that the photo, corrected category,
-  location, and saved report remain available.
-- Simulate an unavailable Gemini service and complete a manual report.
-- Repeat a submission for the same saved analysis and confirm it returns one
-  report. A storage or database failure must never show a successful receipt.
-- Measure ordinary report completion and image-processing time on a phone.
-  “One minute” is the product goal, not a verified latency guarantee.
-
-These require a configured Supabase project, Gemini access, and a deployed test
-device. They cannot be inferred from a successful local build.
+The demo map can expose a report photo, issue details, address, and precise
+coordinates. Use consented public-space images and avoid faces, license plates,
+home interiors, medical information, and other identifying details. The server
+normalizes images and strips metadata, but the visible content of the photo still
+matters. A production deployment needs clear consent, moderation, deletion, and
+retention controls.
 
 ## Project layout
 
 ```text
-app/page.tsx                       Capture, analysis review, and submission
-app/receipt/[id]/page.tsx          Durable report receipt
-app/api/upload/route.ts           Validate, normalize, store, analyze, and save
-app/api/submit/route.ts           Authoritative report submission
-app/api/health/route.ts           Configuration and database health
-worker/src/index.ts              Listen for new reports and file the matching mock form
-worker/src/agency-route.ts       Choose Riverton DOT vs City 311 from category
-lib/incident-scoring.ts          Case score, incident score, and filing threshold
-lib/gemini.ts                    Server-side Gemini request
-lib/hazard-analysis.mjs          Prompt, schema, and validation
-lib/analysis-store.ts            Saved analysis persistence
-lib/analysis-labels.ts           Category labels
-lib/db.ts                        Reporting transactions and persistence
-lib/storage.ts                   Supabase photo storage
-supabase/migrations/             Explicit database setup
-tests/                           Automated regression checks
+app/page.tsx                              Capture, review, and report submission
+app/map/page.tsx                          Public incident map
+app/receipt/[id]/page.tsx                 Durable receipt and Baltimore handoff
+app/api/upload/route.ts                   Normalize, store, analyze, and persist
+app/api/submit/route.ts                   Authoritative report and clustering
+app/api/reports/[id]/prepare-311/route.ts Prepared Baltimore handoff packet
+app/api/incidents/route.ts                Map-safe incident list and detail
+app/api/incidents/[id]/confirmation/      I-see-this-too state
+app/api/health/route.ts                   Schema and configuration health
+lib/gemini.ts                             Vertex AI request, validation, and retry
+lib/hazard-analysis.mjs                   Prompt and strict response contract
+lib/incident-taxonomy.mjs                 Normalized issue taxonomy
+lib/incident-scoring.ts                   Case score, incident score, and filing threshold
+lib/baltimore-311-routing.mjs             Baltimore service-type mapping
+lib/db.ts                                 Transactions, clustering, and persistence
+worker/src/index.ts                       Listen for new reports and file the matching mock form
+worker/src/agency-route.ts                Choose Riverton DOT vs City 311 from category
+supabase/migrations/                      Database setup in execution order
+tests/                                    Contract and regression tests
 ```
-
-See [docs/image-analysis.md](docs/image-analysis.md) for the pipeline, score
-definitions, trust boundaries, and operational limits.
 
 ## Troubleshooting
 
-- **Upload fails:** confirm the storage bucket exists, service credentials are
-  present, and the database migration is applied. Retry with JPEG, PNG, or WebP.
-  HEIC/HEIF support depends on the browser being able to decode and convert it;
-  if conversion fails, export a JPEG first.
-- **Manual analysis fallback appears:** check `GEMINI_API_KEY`, model access,
-  quota, and network availability. A saved manual report remains valid evidence.
-- **Database unavailable:** check the project's pooler connection string and
-  password, and inspect server logs. Do not share credentials in screenshots.
-- **Camera or location is denied:** use file upload and enter the location
-  manually. Confirm the phone is using HTTPS before testing permissions again.
+- **Photo cannot be saved:** verify the `report-photos` bucket, Supabase URL and
+  service-role key, database connection, and applied migrations. Check the matching
+  `/api/upload` runtime log in Vercel.
+- **AI analysis is unavailable:** inspect the structured
+  `image_analysis_unavailable` log entry. `rate_limited`/429 means Vertex quota or
+  shared capacity; retry after a short delay. `credentials` means the service
+  account or Vertex permissions are wrong. `model_unavailable` means the selected
+  model is unavailable in the configured project/location.
+- **Vertex model returns 404:** keep `GOOGLE_CLOUD_LOCATION=global` for the current
+  model and confirm the production deployment uses the expected `GEMINI_MODEL`.
+- **Map is empty:** submit a report with GPS coordinates, apply the clustering and
+  confirmation migrations, and inspect `GET /api/incidents`.
+- **Camera or location is denied:** use file upload and manual location entry. GPS
+  clustering and default map placement require coordinates.
 - **Worker never opens a browser:** apply
   `202609190004_mock_government_submission.sql` through
-  `202609190007_incident_scoring.sql`, confirm the incident score is at least
+  `202609190008_incident_scoring.sql`, confirm the incident score is at least
   0.75 (`government_report_status` is `ready_to_submit`), apply
-  `202609190006_reports_realtime.sql`, and run `npx playwright install chromium`.
+  `202609190007_reports_realtime.sql`, and run `npx playwright install chromium`.
   Emergencies and already-filed incidents are skipped on purpose.
 
 ## License

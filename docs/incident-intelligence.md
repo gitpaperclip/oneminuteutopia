@@ -100,9 +100,10 @@ catalog endpoint is not publicly readable.
 Apply `supabase/migrations/202609190002_incident_context_and_clustering.sql`,
 `supabase/migrations/202609190003_baltimore_311_routing.sql`,
 `supabase/migrations/202609190004_mock_government_submission.sql`,
-`supabase/migrations/202609190005_mock_agency.sql`,
-`supabase/migrations/202609190006_reports_realtime.sql`, and
-`supabase/migrations/202609190007_incident_scoring.sql` after the two
+`supabase/migrations/202609190005_incident_confirmations.sql`,
+`supabase/migrations/202609190006_mock_agency.sql`,
+`supabase/migrations/202609190007_reports_realtime.sql`, and
+`supabase/migrations/202609190008_incident_scoring.sql` after the two
 existing reporting migrations. They backfill existing records with
 broad fallback incident types and create indexes for subtype, tag, and recent
 location matching.
@@ -124,7 +125,9 @@ the routing disposition is not `emergency` or `no_submission`, it chooses a
 mock agency from the incident category: roads, sidewalks, and streetlights go
 to the Riverton DOT form; other civic issues go to the City 311 form. It stores
 `mock_reference_id` and `mock_agency` on the incident. That confirmation is a
-demo ID, not a Baltimore City case number.
+demo ID, not a Baltimore City case number. If `incident_score` is missing, the
+worker falls back to the earlier `evidence_count >= 2` gate so older rows can
+still file.
 
 ## Baltimore 311 handoff
 

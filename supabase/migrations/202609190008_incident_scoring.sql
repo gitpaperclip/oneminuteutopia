@@ -1,5 +1,5 @@
 -- Case scores on each report and incident-level community scores.
--- Apply after 202609190006. Additive.
+-- Apply after 202609190007. Additive.
 -- Report danger and confidence stay on existing columns: seriousness, ai_confidence.
 begin;
 

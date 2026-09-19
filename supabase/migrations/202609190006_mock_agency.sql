@@ -1,4 +1,4 @@
--- Which mock agency received a demo filing. Apply after 202609190004.
+-- Which mock agency received a demo filing. Apply after 202609190005.
 begin;
 
 alter table public.incidents add column if not exists mock_agency text;

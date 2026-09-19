@@ -9,6 +9,9 @@ import { PROMPT, GEMINI_SCHEMA, parseGemini, imageMime, MAX_IMAGE_BYTES } from '
 import { CONTEXT_TAGS } from './incident-taxonomy.mjs';
 
 export const ANALYSIS_TIMEOUT_MS = 18_000;
+export const RATE_LIMIT_MAX_ATTEMPTS = 3;
+export const RATE_LIMIT_BACKOFF_BASE_MS = 750;
+export const RATE_LIMIT_BACKOFF_CAP_MS = 4_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 const DEFAULT_PROJECT = 'project-0e7457ec-0481-4abd-b67';
 const DEFAULT_LOCATION = 'global';
@@ -108,6 +111,56 @@ function vertexHttpStatus(error: unknown): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
+function isProviderRateLimit(error: unknown): boolean {
+  if (error instanceof GeminiAnalysisError) return error.code === 'rate_limited';
+  return vertexHttpStatus(error) === 429;
+}
+
+// Full jitter: sleep in [0, min(cap, base * 2^retryIndex)].
+export function rateLimitBackoffMs(retryIndex: number, random = Math.random): number {
+  const ceiling = Math.min(RATE_LIMIT_BACKOFF_CAP_MS, RATE_LIMIT_BACKOFF_BASE_MS * (2 ** retryIndex));
+  return random() * ceiling;
+}
+
+function waitWithSignal(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    signal.addEventListener('abort', onAbort);
+  });
+}
+
+async function generateContentWithRateLimitRetry(
+  generate: () => Promise<GenerateContentResult>,
+  signal: AbortSignal,
+): Promise<GenerateContentResult> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < RATE_LIMIT_MAX_ATTEMPTS; attempt++) {
+    if (signal.aborted) throw signal.reason;
+    if (attempt > 0) await waitWithSignal(rateLimitBackoffMs(attempt - 1), signal);
+    try {
+      return await Promise.race([generate(), timeoutPromise]);
+    } catch (error) {
+      lastError = error;
+      if (signal.aborted) throw signal.reason;
+      if (!isProviderRateLimit(error) || attempt === RATE_LIMIT_MAX_ATTEMPTS - 1) throw error;
+    }
+  }
+  throw lastError;
+}
+
 export interface AnalysisResult {
   category: string;
   incident_type: string;
@@ -204,13 +257,11 @@ export class GeminiService {
       const request = {
         contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageBuffer.toString('base64') } }] }],
       };
-      
-      const responsePromise = generativeModel.generateContent(request);
-      const timeoutPromise = new Promise((_, reject) => {
-        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-      });
-      
-      const response = await Promise.race([responsePromise, timeoutPromise]) as GenerateContentResult;
+
+      const response = await generateContentWithRateLimitRetry(
+        () => generativeModel.generateContent(request),
+        signal,
+      );
       
       const data: unknown = response.response;
       const candidates = record(data).candidates;
@@ -235,7 +286,7 @@ export class GeminiService {
         throw new GeminiAnalysisError('invalid_response', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount, validationStage);
       }
     } catch (error) {
-      // The same deadline covers both the request and reading its response body.
+      // The same deadline covers retries, backoff, the request, and reading its response body.
       if (signal.aborted) throw new GeminiAnalysisError('timeout');
       if (error instanceof GeminiAnalysisError) throw error;
       
