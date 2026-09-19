@@ -83,6 +83,7 @@ export default function HomePage() {
   const [locMode, setLocMode] = useState<'gps' | 'manual'>('gps');
   const [locBusy, setLocBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
 
   const reviewing = capturePhase === 'reviewing';
   const processing = capturePhase === 'processing';
@@ -168,6 +169,38 @@ export default function HomePage() {
     if (video.srcObject !== stream) video.srcObject = stream;
     if (!preview) void video.play().catch(() => undefined);
   }, [cameraOn, preview, step]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return;
+    const stage = new URLSearchParams(window.location.search).get('ui');
+    if (stage !== 'analysis' && stage !== 'confirm' && stage !== 'analysis-emergency') return;
+    let cancelled = false;
+    void fetch('/logo-mark.png')
+      .then((res) => res.blob())
+      .then((blob) => {
+        if (cancelled) return;
+        const emergency = stage === 'analysis-emergency';
+        replacePreview(URL.createObjectURL(blob));
+        setUpload({
+          analysis_id: 'ui-preview',
+          analysis_status: 'complete',
+          analysis: {
+            category: emergency ? 'fire_injury_or_immediate_threat' : 'roads_and_sidewalks',
+            seriousness: emergency ? 10 : 6,
+            ai_confidence: 80,
+          },
+        });
+        setCategory(emergency ? 'fire_injury_or_immediate_threat' : 'roads_and_sidewalks');
+        if (stage === 'confirm') {
+          setGps({ latitude: 39.2904, longitude: -76.6122, accuracy: 12 });
+          setLocMode('gps');
+        }
+        setStep(stage === 'confirm' ? 'confirm' : 'analysis');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [replacePreview]);
 
   const beginReview = useCallback(
     (file: File) => {
@@ -287,6 +320,29 @@ export default function HomePage() {
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 60_000 },
     );
   };
+
+  const resetToCapture = useCallback(() => {
+    gen.current += 1;
+    uploadAbort.current?.abort();
+    uploadAbort.current = null;
+    pendingFile.current = null;
+    replacePreview(null);
+    setUpload(null);
+    setCategory('');
+    setNote('');
+    setGps(null);
+    setAddress('');
+    setLocMode('gps');
+    setLocBusy(false);
+    setSubmitting(false);
+    setError(null);
+    setLeaveOpen(false);
+    setCapturePhase('live');
+    setStep('capture');
+  }, [replacePreview]);
+
+  const askLeaveReport = () => setLeaveOpen(true);
+  const stayWithReport = () => setLeaveOpen(false);
 
   const canSubmit =
     !!upload &&
@@ -454,94 +510,134 @@ export default function HomePage() {
       )}
 
       {step === 'analysis' && upload && preview && (
-        <section className="analysis-stage">
-          <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
-          <img src={preview} alt="" className="analysis-photo" />
-          {upload.analysis_status === 'unavailable' && (
-            <p className="toast-warn">{upload.warning || 'Assessment unavailable — pick a category next.'}</p>
-          )}
-          <AnalysisCard
-            category={upload.analysis.category}
-            seriousness={upload.analysis.seriousness}
-            onContinue={() => {
-              setError(null);
-              setStep('confirm');
-              requestGps();
-            }}
-          />
+        <section className="analysis-page" aria-labelledby="analysis-title">
+          <header className="page-header">
+            <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
+            <button type="button" className="text-btn" onClick={askLeaveReport}>
+              Back
+            </button>
+          </header>
+          <div className="analysis-page-body">
+            {upload.analysis_status === 'unavailable' && (
+              <p className="toast-warn toast-warn-inline">
+                {upload.warning || 'Assessment unavailable — pick a category next.'}
+              </p>
+            )}
+            <AnalysisCard
+              category={upload.analysis.category}
+              seriousness={upload.analysis.seriousness}
+              onContinue={() => {
+                setError(null);
+                setLeaveOpen(false);
+                setStep('confirm');
+                requestGps();
+              }}
+            />
+            <img src={preview} alt="" className="analysis-thumb" />
+          </div>
         </section>
       )}
 
       {step === 'confirm' && upload && (
-        <section className="confirm-stage">
-          <header className="confirm-header">
-            <img src="/logo-mark.png?v=3" alt="1MU" width={32} height={32} />
-            <button type="button" className="text-btn" onClick={() => setStep('analysis')}>
+        <section className="confirm-stage" aria-label="Confirm report">
+          <header className="page-header">
+            <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
+            <button type="button" className="text-btn" onClick={askLeaveReport}>
               Back
             </button>
           </header>
-          {preview && <img src={preview} alt="" className="confirm-thumb" />}
-          {error && (
-            <p className="toast-error toast-error-inline" role="alert">
-              {error}
-            </p>
-          )}
-          <label className="field">
-            <span>Category</span>
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORY_OPTIONS.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="field">
-            <span>Location</span>
-            {locMode === 'gps' && gps ? (
-              <div className="loc-row">
-                <p className="loc-gps">GPS ±{Math.round(gps.accuracy)}m</p>
-                <button type="button" className="text-btn" onClick={() => setLocMode('manual')}>
-                  Address
-                </button>
-                <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
-                  {locBusy ? '…' : 'Refresh'}
-                </button>
+          <div className="confirm-body">
+            <div className="confirm-form">
+              {preview && <img src={preview} alt="" className="confirm-thumb" />}
+              {error && (
+                <p className="toast-error toast-error-inline" role="alert">
+                  {error}
+                </p>
+              )}
+              <label className="field">
+                <span>Category</span>
+                <select value={category} onChange={(e) => setCategory(e.target.value)}>
+                  {CATEGORY_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="field">
+                <span>Location</span>
+                {locMode === 'gps' && gps ? (
+                  <div className="loc-row">
+                    <p className="loc-gps">GPS ±{Math.round(gps.accuracy)}m</p>
+                    <button type="button" className="text-btn" onClick={() => setLocMode('manual')}>
+                      Address
+                    </button>
+                    <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
+                      {locBusy ? '…' : 'Refresh'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="loc-row">
+                    <input
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="Short address"
+                      maxLength={200}
+                      autoComplete="street-address"
+                    />
+                    <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
+                      {locBusy ? '…' : 'GPS'}
+                    </button>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="loc-row">
+              <label className="field">
+                <span>Add a note to your report</span>
                 <input
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Short address"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Add a note to your report"
                   maxLength={200}
-                  autoComplete="street-address"
                 />
-                <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
-                  {locBusy ? '…' : 'GPS'}
-                </button>
-              </div>
-            )}
+              </label>
+            </div>
           </div>
-          <label className="field">
-            <span>Note</span>
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Optional one line"
-              maxLength={200}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn btn-primary btn-block"
-            disabled={!canSubmit || submitting || locBusy}
-            onClick={() => void submit()}
-          >
-            {submitting ? 'Saving…' : 'Save report'}
-          </button>
+          <div className="confirm-footer">
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              disabled={!canSubmit || submitting || locBusy}
+              onClick={() => void submit()}
+            >
+              {submitting ? 'Saving…' : 'Save report'}
+            </button>
+          </div>
         </section>
       )}
+
+      {leaveOpen && (step === 'analysis' || step === 'confirm') ? (
+        <div
+          className="leave-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="leave-title"
+        >
+          <div className="leave-card">
+            <h2 id="leave-title" className="leave-title">
+              Leave this report?
+            </h2>
+            <p className="leave-copy">
+              Clear the cached photo and delete this in-progress report, or return to the report.
+            </p>
+            <button type="button" className="btn btn-danger btn-block" onClick={resetToCapture}>
+              Clear photo and delete
+            </button>
+            <button type="button" className="btn btn-primary btn-block" onClick={stayWithReport}>
+              Return to the report
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

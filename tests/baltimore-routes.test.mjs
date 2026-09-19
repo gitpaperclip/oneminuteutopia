@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { CATEGORY_LABELS } from '../lib/analysis-labels.ts';
 import {
+  B311_REPORT_URL,
   ELECTRICITY_HIGH_SERIOUSNESS,
   EXTREME_SERIOUSNESS,
+  agencyReportLink,
   handoffsForCategory,
   isEmergencyHandoff,
   likelyDepartmentName,
@@ -34,12 +37,14 @@ test('routine categories expose a primary department with 311 fallback', () => {
   assert.equal(trash.at(-1)?.id, 'b311');
   assert.deepEqual(
     trash.find((link) => link.id === 'b311')?.phones?.map((p) => p.number),
-    ['311', '410-396-5352'],
+    ['311', '443-263-2220'],
   );
+  assert.equal(trash[0].reportUrl, B311_REPORT_URL);
+  assert.equal(agencyReportLink('trash_and_sanitation').href, B311_REPORT_URL);
 
   const water = handoffsForCategory('water_drainage_and_sewage');
   assert.equal(water[0].id, 'dpw-water');
-  assert.equal(water[0].phones?.[0]?.number, '410-396-3500');
+  assert.equal(water[0].phones?.[1]?.number, '410-396-5352');
 
   const roads = handoffsForCategory('roads_and_sidewalks');
   assert.equal(roads[0].department, 'Baltimore City Department of Transportation');
@@ -67,6 +72,21 @@ test('telHref builds dialable hrefs for short codes and local numbers', () => {
   assert.equal(telHref('911'), 'tel:911');
   assert.equal(telHref('311'), 'tel:311');
   assert.equal(telHref('410-396-5352'), 'tel:4103965352');
+});
+
+test('each category maps to an https public report URL', () => {
+  for (const category of Object.keys(CATEGORY_LABELS)) {
+    const link = agencyReportLink(category);
+    assert.match(link.href, /^https:\/\//, category);
+    assert.equal(link.href.startsWith('tel:'), false, category);
+  }
+  assert.equal(agencyReportLink('roads_and_sidewalks').id, 'bcdot');
+  assert.equal(agencyReportLink('roads_and_sidewalks').href, B311_REPORT_URL);
+  assert.equal(agencyReportLink('electricity_and_gas').id, 'bge');
+  assert.equal(agencyReportLink('electricity_and_gas').href, 'https://secure.bge.com/powerOutages/');
+  assert.equal(agencyReportLink('fire_injury_or_immediate_threat').id, 'bcfd');
+  assert.equal(agencyReportLink('fire_injury_or_immediate_threat').href, B311_REPORT_URL);
+  assert.equal(handoffsForCategory('fire_injury_or_immediate_threat').find((l) => l.id === 'bpd')?.reportUrl, 'https://www.baltimorepolice.org/file-police-report');
 });
 
 test('handoff copy stays informational and never claims a city filing', () => {

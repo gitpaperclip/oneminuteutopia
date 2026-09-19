@@ -102,14 +102,28 @@ function HandoffItem({ link }: { link: HandoffLink }) {
           </p>
         ) : null}
         {isTel ? null : (
-          <a
-            className="handoff-portal"
-            href={link.href}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Website
-          </a>
+          <p className="handoff-links">
+            {link.reportUrl ? (
+              <a
+                className="handoff-portal"
+                href={link.reportUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Report
+              </a>
+            ) : null}
+            {link.href !== link.reportUrl ? (
+              <a
+                className="handoff-portal"
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Website
+              </a>
+            ) : null}
+          </p>
         )}
       </article>
     </li>
