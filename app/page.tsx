@@ -49,6 +49,7 @@ export default function ReportPage() {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [isCameraLoading, setIsCameraLoading] = useState(false);
 
   useEffect(() => {
     // Request location on mount
@@ -63,6 +64,15 @@ export default function ReportPage() {
       }
     };
   }, [cameraStream]);
+
+  useEffect(() => {
+    // Cleanup image preview URLs to prevent memory leaks
+    return () => {
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
 
   const requestLocation = () => {
     if (!navigator.geolocation) {
@@ -88,46 +98,116 @@ export default function ReportPage() {
   };
 
   const startCamera = async () => {
+    setIsCameraLoading(true);
+    setError(null);
+    
+    let stream: MediaStream | null = null;
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, // Rear camera
+      // Request camera with rear-facing preference (mobile-first)
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
         audio: false,
       });
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+      if (!videoRef.current) {
+        throw new Error('Video element not available');
       }
+      
+      // Set up video element for iOS Safari compatibility
+      const video = videoRef.current;
+      video.srcObject = stream;
+      
+      // Wait for video metadata to load before showing camera
+      await new Promise<void>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Video stream timeout'));
+        }, 10000);
+        
+        const handleLoadedMetadata = () => {
+          clearTimeout(timeoutId);
+          video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+          resolve();
+        };
+        
+        video.addEventListener('loadedmetadata', handleLoadedMetadata);
+        
+        // Explicitly play for iOS Safari
+        video.play().catch(reject);
+      });
       
       setCameraStream(stream);
       setShowCamera(true);
-      setError(null);
+      setIsCameraLoading(false);
     } catch (err) {
       console.error('Camera error:', err);
-      setError('Unable to access camera. Please use the upload option.');
+      
+      // Clean up stream if initialization failed
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      
+      setIsCameraLoading(false);
+      setShowCamera(false);
+      setCameraStream(null);
+      
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Unable to access camera: ${errorMessage}. Please use the upload option below.`);
     }
   };
 
-  const capturePhoto = () => {
-    if (!videoRef.current || !cameraStream) return;
+  const capturePhoto = async () => {
+    if (!videoRef.current || !cameraStream) {
+      setError('Camera not ready. Please try again or use upload.');
+      return;
+    }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    const ctx = canvas.getContext('2d');
+    const video = videoRef.current;
     
-    if (ctx) {
-      ctx.drawImage(videoRef.current, 0, 0);
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-          handleImageSelected(file);
-          
-          // Stop camera
-          cameraStream.getTracks().forEach(track => track.stop());
-          setShowCamera(false);
-          setCameraStream(null);
-        }
-      }, 'image/jpeg', 0.9);
+    // Ensure video has valid dimensions
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      setError('Video stream not ready. Please wait a moment and try again.');
+      return;
+    }
+
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      
+      if (!ctx) {
+        throw new Error('Canvas context not available');
+      }
+      
+      // Draw current video frame to canvas
+      ctx.drawImage(video, 0, 0);
+      
+      // Convert to blob (JPEG for iOS compatibility)
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, 'image/jpeg', 0.9);
+      });
+      
+      if (!blob) {
+        throw new Error('Failed to capture image');
+      }
+      
+      const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      
+      // Stop and cleanup camera
+      cameraStream.getTracks().forEach(track => track.stop());
+      setShowCamera(false);
+      setCameraStream(null);
+      
+      // Process the captured image
+      await handleImageSelected(file);
+    } catch (err) {
+      console.error('Capture error:', err);
+      setError('Failed to capture photo. Please try again or use upload.');
     }
   };
 
@@ -143,6 +223,11 @@ export default function ReportPage() {
   };
 
   const handleImageSelected = async (file: File) => {
+    // Revoke previous object URL to prevent memory leak
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
     setError(null);
@@ -256,18 +341,30 @@ export default function ReportPage() {
             </div>
           )}
 
-          {showCamera ? (
+          {showCamera || isCameraLoading ? (
             <div className="space-y-4">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                className="w-full rounded-lg bg-black"
-              />
+              {isCameraLoading ? (
+                <div className="w-full aspect-video bg-black rounded-lg flex items-center justify-center">
+                  <div className="text-center text-white">
+                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
+                    <p>Starting camera...</p>
+                  </div>
+                </div>
+              ) : (
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full rounded-lg bg-black"
+                  style={{ maxHeight: '70vh' }}
+                />
+              )}
               <div className="flex gap-3">
                 <button
                   onClick={capturePhoto}
-                  className="flex-1 bg-blue-600 text-white py-4 px-6 rounded-lg font-medium hover:bg-blue-700 transition"
+                  disabled={isCameraLoading || !cameraStream}
+                  className="flex-1 bg-blue-600 text-white py-4 px-6 rounded-lg font-medium hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   Capture Photo
                 </button>
@@ -278,6 +375,8 @@ export default function ReportPage() {
                     }
                     setShowCamera(false);
                     setCameraStream(null);
+                    setIsCameraLoading(false);
+                    setError(null);
                   }}
                   className="px-6 py-4 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition"
                 >
@@ -296,13 +395,14 @@ export default function ReportPage() {
                 <>
                   <button
                     onClick={startCamera}
-                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                    disabled={isCameraLoading}
+                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    Take Photo
+                    {isCameraLoading ? 'Starting Camera...' : 'Take Photo'}
                   </button>
 
                   <div className="relative">
@@ -316,7 +416,8 @@ export default function ReportPage() {
 
                   <button
                     onClick={handleFileSelect}
-                    className="w-full border-2 border-gray-300 text-gray-700 py-4 px-6 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2"
+                    disabled={isCameraLoading}
+                    className="w-full border-2 border-gray-300 text-gray-700 py-4 px-6 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2 disabled:bg-gray-200 disabled:cursor-not-allowed"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
