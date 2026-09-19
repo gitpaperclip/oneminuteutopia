@@ -352,11 +352,12 @@ test('production parsing distinguishes blocked, truncated and invalid responses'
 test('Supabase persists the assessment using server credentials', async t => {
   configureSupabase(t);
   t.mock.method(globalThis, 'fetch', async (url, init) => {
-    assert.equal(url, 'https://test.supabase.co/rest/v1/image_analyses');
+    assert.equal(url, 'https://test.supabase.co/rest/v1/image_analyses?on_conflict=id');
     assert.equal(init.headers.apikey, 'server-secret');
     assert.equal(init.headers.Authorization, 'Bearer server-secret');
     assert.equal(init.cache, 'no-store');
     const data = JSON.parse(init.body);
+    assert.match(data.id, /^[0-9a-f-]{36}$/i);
     assert.equal(data.seriousness, 6);
     assert.equal(data.ai_confidence, 80);
     assert.equal(data.analysis_status, 'complete');
@@ -366,7 +367,7 @@ test('Supabase persists the assessment using server credentials', async t => {
     assert.deepEqual(data.baltimore_service_candidates, ['TRM-Potholes', 'TRM-Pickup Pothole']);
     assert.equal(data.routing_disposition, '311');
     assert.ok(!('overall_danger' in data));
-    return response([{ id: 'saved', ...data }], 201);
+    return response([{ ...data, id: 'saved' }], 201);
   });
   const saved = await AnalysisStore.save(storedInput);
   assert.equal(saved.id, 'saved');
@@ -378,6 +379,21 @@ test('Supabase write failure or empty response is never reported as saved', asyn
   await assert.rejects(() => AnalysisStore.save(storedInput));
   mocked.mock.mockImplementation(async () => response([]));
   await assert.rejects(() => AnalysisStore.save(storedInput));
+});
+
+test('Supabase retries a transient analysis write with one stable id', async t => {
+  configureSupabase(t);
+  const ids = [];
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    calls++;
+    ids.push(JSON.parse(init.body).id);
+    return calls === 1 ? response({}, 503) : response([{ id: ids[0], ...result }], 201);
+  });
+  const saved = await AnalysisStore.save(storedInput);
+  assert.equal(calls, 2);
+  assert.equal(ids[0], ids[1]);
+  assert.equal(saved.id, ids[0]);
 });
 
 test('invalid assessments are rejected before persisting to Supabase', async t => {

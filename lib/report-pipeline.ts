@@ -13,7 +13,7 @@ export async function prepareReport(buffer: Buffer, sessionId: string, services 
     services.storage.saveImage(buffer, 'image/jpeg'),
     services.gemini.analyzeImage(buffer, 'image/jpeg'),
   ]);
-  if (image.status === 'rejected') throw new Error('Photo storage failed');
+  if (image.status === 'rejected') throw image.reason;
   const complete = assessment.status === 'fulfilled';
   const analysis: AnalysisResult = complete ? assessment.value : {
     category: 'unable_to_assess', incident_type: 'unable_to_assess',

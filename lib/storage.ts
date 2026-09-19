@@ -50,18 +50,25 @@ export class StorageService {
     
     const supabase = this.getSupabaseClient();
     
-    // Upload to Supabase Storage
-    const { data, error } = await supabase.storage
-      .from(this.bucketName)
-      .upload(filename, buffer, {
+    // A unique filename makes an idempotent retry safe if the first request timed out
+    // after Supabase had already accepted the bytes.
+    let data: { path: string } | null = null;
+    let finalError: { message: string } | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const result = await supabase.storage.from(this.bucketName).upload(filename, buffer, {
         contentType: mimeType,
         cacheControl: '31536000', // 1 year
-        upsert: false,
+        upsert: true,
       });
+      data = result.data;
+      finalError = result.error;
+      if (!finalError) break;
+    }
 
-    if (error) {
-      console.error('Supabase Storage upload error:', error);
-      throw new Error(`Failed to upload image to Supabase Storage: ${error.message}`);
+    if (finalError || !data) {
+      // Log no URL, credentials, image bytes, or session identifier.
+      console.error('photo_storage_unavailable', JSON.stringify({ provider: 'supabase', error_name: finalError?.constructor?.name ?? 'UnknownError' }));
+      throw new Error('Photo storage unavailable');
     }
 
     // Get the public URL

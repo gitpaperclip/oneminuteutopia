@@ -250,7 +250,7 @@ test('a failed photo upload never saves an analysis or returns success', async (
   const { services, savedInputs, deletedImages } = createServices({ storage: {
     saveImage: async () => { throw new Error('Storage unavailable'); },
   } });
-  await assert.rejects(prepareReport(jpeg, 'session-owner', services), /Photo storage failed/);
+  await assert.rejects(prepareReport(jpeg, 'session-owner', services), /Storage unavailable/);
   assert.deepEqual(savedInputs, []);
   assert.deepEqual(deletedImages, []);
 });
@@ -260,7 +260,7 @@ test('simultaneous photo and AI failures are both handled and never save a draft
     storage: { saveImage: async () => { throw new Error('Storage unavailable'); } },
     gemini: { analyzeImage: async () => { throw new Error('AI unavailable'); } },
   });
-  await assert.rejects(prepareReport(jpeg, 'session-owner', services), /Photo storage failed/);
+  await assert.rejects(prepareReport(jpeg, 'session-owner', services), /Storage unavailable/);
   assert.deepEqual(savedInputs, []);
 });
 
