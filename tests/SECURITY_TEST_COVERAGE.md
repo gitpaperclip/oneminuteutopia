@@ -1,19 +1,21 @@
 # Security and Failure-Contract Test Coverage
 
 **Agent E - Priority 5 Deliverable**  
-**File:** `tests/security-and-failures.test.mjs`
+**Files:** 
+- `tests/security-and-failures.test.mjs` (29 tests)
+- `tests/workplan-security.test.mjs` (23 tests)
 
 ## Overview
 
-This document describes the comprehensive security and negative testing coverage for the One Minute Utopia upload and report submission paths.
+This document describes the comprehensive security and negative testing coverage for the One Minute Utopia upload and report submission paths, aligned with the grok-agent-workplan.md requirements.
 
 ## Test Statistics
 
-- **Total Tests:** 74 (including existing tests from other files)
-- **New Security Tests:** 29
-- **Passing:** 67
-- **Skipped (when DB unavailable):** 7
-- **Failures:** 0
+- **Total Tests:** 102 (all test files combined)
+- **Agent E Security Tests:** 52 (29 + 23)
+- **Passing:** 95
+- **Skipped (when DB unavailable):** 4
+- **Expected Skips:** 3 (Supabase not configured in test environment)
 
 ## Security Test Categories
 
@@ -182,6 +184,52 @@ Tests focus on:
 - Emergency category handling (911-only scenarios)
 - Data integrity during prepare phase
 - Input validation and malicious input rejection
+
+## Workplan-Specific Tests (tests/workplan-security.test.mjs)
+
+### HARD STOP: No 311 API Submission (Tests 1-3)
+
+Per grok-agent-workplan.md: "Do not automate the city website, reverse-engineer private endpoints, bypass login, or label an internal database write as a city submission."
+
+- **Test 1:** baltimore-311-routing module exports only data, not submission/API functions
+- **Test 2:** No fetch/HTTP calls to Baltimore 311 API in routing module
+- **Test 3:** /api/baltimore-311/services is GET-only (no POST/PUT/PATCH)
+
+### Emergency → 911 ONLY (Tests 4-6)
+
+Per workplan: "Treat emergency classifications as instructions to call 911, never as 311 submission candidates."
+
+- **Test 4:** All emergency incident types have NO 311 service candidates
+- **Test 5:** Emergency disposition routes never suggest 311 submission
+- **Test 6:** fire_injury_or_immediate_threat category has no 311 candidates
+
+### Prepare-Only Assertions (Tests 7-9)
+
+- **Test 7:** No code claims reports are "submitted to city" or "sent to 311"
+- **Test 8:** Database writes not labeled as city submission
+- **Test 9:** No mock or fake submission endpoints exist
+
+### New Endpoint Security (Tests 10-12)
+
+- **Test 10:** /api/incidents does not expose session IDs or private data
+- **Test 11:** /api/baltimore-311/services requires no authentication (public catalog)
+- **Test 12:** Incident listing returns only safe aggregate fields
+
+### Routing & Disposition Validation (Tests 13-19)
+
+- **Test 13:** All incident types have valid routing dispositions
+- **Test 14:** 311 disposition routes have non-empty service types
+- **Test 15:** no_submission disposition has no service types
+- **Test 16:** Routing dispositions match documented semantics
+- **Test 17:** Service types follow Baltimore 311 observed format
+- **Test 18:** No service types contain injection attempts
+
+### Workplan Compliance (Tests 20-23)
+
+- **Test 20:** Supabase credentials never exposed to browser
+- **Test 21:** Manual reporting preserved when Gemini unavailable
+- **Test 22:** Routing module includes source attribution
+- **Test 23:** No promises of city submission in UI strings
 
 ## Defects Found
 
