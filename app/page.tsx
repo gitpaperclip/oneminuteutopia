@@ -386,9 +386,12 @@ export default function ReportPage() {
         body: formData,
       });
 
-      const data = await response.json().catch(() => {
+      let data;
+      try {
+        data = await response.json();
+      } catch {
         throw new Error('The server could not process your request. Please try again.');
-      });
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Upload failed');

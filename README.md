@@ -248,6 +248,28 @@ lib/
 
 ## Troubleshooting
 
+### "Failed to process image" error
+
+If you see this error during photo upload, it typically means one of the required services is not configured:
+
+1. **Photo storage is not configured (BLOB_READ_WRITE_TOKEN)**
+   - Go to your Vercel project → Storage tab
+   - Create a Blob storage if you haven't already
+   - Redeploy your application
+   - Verify it's working: visit `https://your-app.vercel.app/api/health`
+
+2. **Database is not configured**
+   - Go to your Vercel project → Storage tab
+   - Create a Postgres database if you haven't already
+   - Redeploy your application
+   - Verify it's working: visit `https://your-app.vercel.app/api/health`
+
+3. **Use the health check endpoint**
+   ```
+   curl https://your-app.vercel.app/api/health
+   ```
+   This will show which services are properly configured.
+
 ### Camera not working on iPhone
 - Ensure you're accessing via **HTTPS** (Vercel provides this)
 - Check that Safari has camera permissions: Settings → Safari → Camera
