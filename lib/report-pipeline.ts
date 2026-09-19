@@ -38,14 +38,34 @@ export async function prepareReport(buffer: Buffer, sessionId: string, services 
     const failure = assessment.reason instanceof GeminiAnalysisError ? assessment.reason : null;
     // The saved reference connects a reporter's failed attempt to Vercel runtime logs.
     // Do not log the original error, provider body, session, image, prompts, or credentials.
-    console.warn('image_analysis_unavailable', JSON.stringify({
+    const logData: Record<string, unknown> = {
       analysis_id: saved.id, model, code: failure?.code ?? 'unknown',
       http_status: failure?.httpStatus, provider_reason: failure?.providerReason,
       finish_reason: failure?.finishReason,
       thoughts_token_count: failure?.thoughtsTokenCount,
       candidates_token_count: failure?.candidatesTokenCount,
       processing_ms: Math.round(performance.now() - started),
-    }));
+    };
+    if (failure?.httpStatus === 400 && failure?.providerErrorBody) {
+      const errorBody = failure.providerErrorBody as Record<string, unknown>;
+      const errorObj = errorBody?.error as Record<string, unknown> | undefined;
+      if (errorObj?.message && typeof errorObj.message === 'string' && errorObj.message.length < 500) {
+        logData.provider_message = errorObj.message;
+      }
+      const details = errorObj?.details;
+      if (Array.isArray(details)) {
+        const fieldPaths = details
+          .map(d => (d as Record<string, unknown>)?.fieldViolations)
+          .filter((fv): fv is Array<{ field?: string }> => Array.isArray(fv))
+          .flat()
+          .map(v => v.field)
+          .filter((f): f is string => typeof f === 'string' && f.length < 100);
+        if (fieldPaths.length > 0) {
+          logData.schema_field_violations = fieldPaths;
+        }
+      }
+    }
+    console.warn('image_analysis_unavailable', JSON.stringify(logData));
   }
   return {
     success: true, image_path: saved.image_path, image_hash: saved.image_hash,
