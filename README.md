@@ -289,9 +289,11 @@ Rate limits are stored in-memory and reset on deployment. For production scale, 
 ### Database Schema
 
 - `sessions`: User and organizer sessions
-- `reports`: Individual submissions with photos
+- `reports`: Individual submissions with photos (lowercase 'r')
 - `incidents`: Aggregated issues (may have multiple reports)
 - `status_events`: Incident status change audit log
+
+> **Note**: If you see a `Reports` table (capital 'R') in your database, it is an unused leftover from early development. The application uses the `reports` table (lowercase 'r'). The capital-R table can be safely ignored or dropped.
 
 ### AI Analysis
 
