@@ -11,7 +11,7 @@ import { CONTEXT_TAGS } from './incident-taxonomy.mjs';
 export const ANALYSIS_TIMEOUT_MS = 18_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 const DEFAULT_PROJECT = 'project-0e7457ec-0481-4abd-b67';
-const DEFAULT_LOCATION = 'us-central1';
+const DEFAULT_LOCATION = 'global';
 
 type FailureCode = 'configuration' | 'credentials' | 'invalid_request' | 'rate_limited'
   | 'model_unavailable' | 'provider_unavailable' | 'timeout' | 'network_error'
@@ -124,6 +124,7 @@ interface VertexModelClient {
 export type VertexModelFactory = (options: {
   project: string;
   location: string;
+  apiEndpoint?: string;
   credentials?: object;
   model: string;
   generationConfig: GenerationConfig;
@@ -133,6 +134,7 @@ const createVertexModel: VertexModelFactory = options => {
   const vertexAI = new VertexAI({
     project: options.project,
     location: options.location,
+    apiEndpoint: options.apiEndpoint,
     googleAuthOptions: options.credentials ? { credentials: options.credentials } : undefined,
   });
   return vertexAI.getGenerativeModel({
@@ -191,6 +193,9 @@ export class GeminiService {
       const generativeModel = modelFactory({
         project: config.project,
         location: config.location,
+        // The deprecated Vertex SDK otherwise constructs the invalid
+        // global-aiplatform.googleapis.com hostname for the global location.
+        apiEndpoint: config.location === 'global' ? 'aiplatform.googleapis.com' : undefined,
         credentials: config.credentials,
         model,
         generationConfig,

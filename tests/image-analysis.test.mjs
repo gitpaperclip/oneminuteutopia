@@ -26,7 +26,7 @@ function setEnv(t, key, value) {
 
 function configureGemini(t, model) {
   setEnv(t, 'GOOGLE_CLOUD_PROJECT', 'test-project');
-  setEnv(t, 'GOOGLE_CLOUD_LOCATION', 'us-central1');
+  setEnv(t, 'GOOGLE_CLOUD_LOCATION', 'global');
   setEnv(t, 'GOOGLE_SERVICE_ACCOUNT_JSON', JSON.stringify({ client_email: 'test@example.com', private_key: 'test-key' }));
   setEnv(t, 'GOOGLE_APPLICATION_CREDENTIALS', undefined);
   setEnv(t, 'GEMINI_MODEL', model);
@@ -129,7 +129,8 @@ test('Vertex service sends the image with a typed provider schema', async t => {
   const factory = vertexFactory(async (options, request) => {
     calls++;
     assert.equal(options.project, 'test-project');
-    assert.equal(options.location, 'us-central1');
+    assert.equal(options.location, 'global');
+    assert.equal(options.apiEndpoint, 'aiplatform.googleapis.com');
     assert.equal(options.model, 'gemini-3.8-flash');
     assert.equal(options.generationConfig.responseMimeType, 'application/json');
     assert.equal(options.generationConfig.responseSchema.type, 'OBJECT');
