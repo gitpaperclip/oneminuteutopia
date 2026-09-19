@@ -351,13 +351,70 @@ body {
 .receipt-911 { margin: 0 0 20px; }
 .receipt-section { margin: 0 0 20px; }
 .receipt-section h2 { margin: 0 0 8px; font-size: 15px; font-weight: 750; color: var(--charcoal); }
-.packet-meta { margin: 0 0 8px; font-size: 13px; font-weight: 650; color: var(--fg); }
+.packet-card {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
+.packet-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f9fafb;
+  border-bottom: 1px solid var(--line);
+}
+.packet-kicker {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.packet-status {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 750;
+  color: var(--charcoal);
+  letter-spacing: -.02em;
+}
+.packet-copy { padding: 4px 0; }
+.packet-endpoint {
+  margin: 0;
+  padding: 8px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  word-break: break-all;
+}
+.packet-photo { width: 100%; height: 140px; object-fit: cover; display: block; background: #f3f4f6; }
+.packet-fields { display: grid; gap: 12px; padding: 14px; }
+.packet-field span {
+  display: block;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.packet-field > div { margin-top: 4px; font-size: 14px; color: var(--fg); line-height: 1.4; }
+.packet-services { display: flex; flex-wrap: wrap; gap: 6px; }
+.packet-services code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
 .packet-body {
   margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #f9fafb;
+  padding: 0;
+  border: 0;
+  background: transparent;
   white-space: pre-wrap;
   font-family: inherit;
   font-size: 13px;

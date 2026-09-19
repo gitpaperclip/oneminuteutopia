@@ -1,16 +1,29 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
+import { CopyPacketButton } from '@/components/CopyPacketButton';
 import { DatabaseService, type Incident } from '@/lib/db';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
-import { BaltimoreRoutingService } from '@/lib/baltimore-routing';
+import { BaltimoreRoutingService, toIntegrationPayload } from '@/lib/baltimore-routing';
 import {
   handoffsForCategory,
   isEmergencyHandoff,
+  likelyDepartmentName,
   telHref,
   type HandoffLink,
 } from '@/lib/baltimore-routes';
+import type { PreparedReport } from '@/lib/prepared-report-types';
 
 /* eslint-disable @next/next/no-img-element -- public mark + stored media URLs */
+
+const READINESS_LABEL: Record<PreparedReport['readiness'], string> = {
+  ready: 'Ready',
+  choose_service: 'Matched services',
+  needs_location: 'Needs location',
+  manual_review: 'In review',
+  emergency: 'Emergency',
+  not_reportable: 'Not a city service issue',
+};
 
 function clusterCopy(count: number) {
   if (count >= 2) return `${count} people reported this nearby.`;
@@ -60,8 +73,14 @@ function mockPortalCopy(incident: Incident | undefined) {
   };
 }
 
-function serviceLabel(code: string): string {
-  return code.replace(/^[A-Z]+-/, '').replace(/-/g, ' ');
+function PacketField({ label, children }: { label: string; children: ReactNode }) {
+  if (children == null || children === '') return null;
+  return (
+    <div className="packet-field">
+      <span>{label}</span>
+      <div>{children}</div>
+    </div>
+  );
 }
 
 function HandoffItem({ link }: { link: HandoffLink }) {
@@ -114,17 +133,22 @@ export default async function ReceiptPage({
     : undefined;
   const category = cat || report.category;
   const prepared = BaltimoreRoutingService.prepareReport(report);
+  const packet = toIntegrationPayload(prepared);
   const emergency =
     prepared.readiness === 'emergency' || isEmergencyHandoff(category, report.seriousness);
   const label = CATEGORY_LABELS[category] || category.replaceAll('_', ' ');
+  const department = likelyDepartmentName(category);
   const contacts = handoffsForCategory(category).filter((link) => link.id !== '911');
-  const description =
-    typeof prepared.prepared_fields?.description === 'string'
-      ? prepared.prepared_fields.description
-      : '';
+  const fields = prepared.prepared_fields ?? {};
+  const description = typeof fields.description === 'string' ? fields.description : '';
+  const location = typeof fields.location === 'string' ? fields.location : '';
+  const photo = typeof fields.photo_url === 'string' ? fields.photo_url : '';
+  const lat = typeof fields.latitude === 'number' ? fields.latitude : null;
+  const lng = typeof fields.longitude === 'number' ? fields.longitude : null;
   const showPacket = !emergency && prepared.readiness !== 'not_reportable';
-  const services = prepared.service_options?.map((option) => option.service_name)
-    ?? (prepared.service_code ? [serviceLabel(prepared.service_code)] : []);
+  const serviceCodes = prepared.service_options?.map((option) => option.service_code)
+    ?? (prepared.service_code ? [prepared.service_code] : []);
+  const coords = lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : '';
   const evidenceCount = incident?.evidence_count ?? 1;
   const mock = mockPortalCopy(incident);
 
@@ -159,12 +183,35 @@ export default async function ReceiptPage({
       </section>
 
       {showPacket ? (
-        <section className="receipt-section" aria-label="311 packet">
-          <h2>311 packet</h2>
-          {services.length ? (
-            <p className="packet-meta">{services.join(' · ')}</p>
-          ) : null}
-          {description ? <pre className="packet-body">{description}</pre> : null}
+        <section className="receipt-section" aria-label="Prepared 311 packet">
+          <article className="packet-card">
+            <header className="packet-toolbar">
+              <div>
+                <p className="packet-kicker">Prepared for 311</p>
+                <p className="packet-status">{READINESS_LABEL[prepared.readiness]}</p>
+              </div>
+              <CopyPacketButton payload={packet} />
+            </header>
+            <p className="packet-endpoint">GET /api/reports/{report.id}/prepare-311</p>
+            {photo ? <img src={photo} alt="" className="packet-photo" /> : null}
+            <div className="packet-fields">
+              <PacketField label="Department">{department}</PacketField>
+              <PacketField label="Service">
+                {serviceCodes.length ? (
+                  <span className="packet-services">
+                    {serviceCodes.map((code) => (
+                      <code key={code}>{code}</code>
+                    ))}
+                  </span>
+                ) : null}
+              </PacketField>
+              <PacketField label="Location">{location || coords}</PacketField>
+              {location && coords ? <PacketField label="Coordinates">{coords}</PacketField> : null}
+              <PacketField label="Description">
+                {description ? <pre className="packet-body">{description}</pre> : null}
+              </PacketField>
+            </div>
+          </article>
         </section>
       ) : null}
 
