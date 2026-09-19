@@ -48,9 +48,10 @@ See [docs/priority-0-findings.md](docs/priority-0-findings.md) for the full
 implementation status, test results, and contract documentation.
 
 **Hard constraint:** The app does NOT call live Baltimore 311 APIs. All 311
-integration is prepare-only (form preview, link generation). Users must manually
-confirm and submit through the city's portal. Never claim "submitted" without a
-returned case/CSR number.
+integration is prepare-only (packet generation, form preview, link generation).
+Users must manually confirm and submit through the city's portal. Never claim
+"submitted" to any government system — a link opened or form displayed is NOT
+proof of city acceptance.
 
 ## Local setup
 

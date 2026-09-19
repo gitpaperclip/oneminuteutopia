@@ -159,12 +159,20 @@ Tests run in embedded PostgreSQL (PGlite) with mocked provider requests. Live de
 See `lib/prepared-report-types.ts` for the canonical prepared-report contract.
 
 **Readiness values:**
-- `ready`: Report is complete and can be submitted to 311 immediately
+- `ready`: Report packet is complete and ready for human portal handoff (user opens intake_url)
 - `choose_service`: User must select from multiple eligible 311 services
 - `needs_location`: GPS denied or unavailable, user must enter address
-- `manual_review`: Human review required before routing (e.g., sensitive content)
-- `emergency`: Immediate danger detected, direct user to 911 (no 311 continue URL)
+- `manual_review`: Human review required before preparing packet (e.g., sensitive content)
+- `emergency`: Immediate danger detected, direct user to 911 (no 311 continue URL, no intake_url)
 - `not_reportable`: Not a civic issue (private property, not a hazard, etc.)
+
+**Key contract changes from review:**
+- Changed all "immediate 311 submission" language to "prepare-only packet for human portal handoff"
+- Removed CSR loophole — NEVER claim "submitted" to any government system
+- Added optional/deferred fields: `prepared_fields`, `user_action`, `disclaimer` (Agent B may defer)
+- Clarified ID usage: prepare-311 endpoint keys on `report_id` (from public.reports.id), NOT `analysis_id`
+  - Mapping: reports.idempotency_key = image_analyses.id (uuid) for loading AI fields if needed
+- Emergency readiness = 911 only, no 311 intake_url, no packet preparation
 
 ## Next Steps (Out of Scope for This Agent)
 
