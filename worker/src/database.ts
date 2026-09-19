@@ -92,8 +92,12 @@ export async function markIncidentSubmitted(
 
   if (!error) return;
 
-  const { mock_agency: _ignored, government_report_status: _status, ...withoutNewColumns } = payload;
-  const retry = await client.from('incidents').update(withoutNewColumns).eq('id', incidentId);
+  const retry = await client.from('incidents').update({
+    mock_reference_id: payload.mock_reference_id,
+    mock_submitted_at: payload.mock_submitted_at,
+    mock_status: payload.mock_status,
+    mock_error: payload.mock_error,
+  }).eq('id', incidentId);
   if (retry.error) {
     throw new Error(`Could not save mock reference id: ${retry.error.message}`);
   }

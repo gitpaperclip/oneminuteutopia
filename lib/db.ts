@@ -98,6 +98,8 @@ export {
   clusterRadiusMeters,
 } from './incident-clustering.ts';
 
+type SqlTx = postgres.TransactionSql;
+
 const GOVERNMENT_STATUS_RANK: Record<GovernmentReportStatus, number> = {
   not_ready: 0,
   ready_to_submit: 1,
@@ -117,7 +119,7 @@ function preferredGovernmentStatus(
 }
 
 async function absorbIncidents(
-  tx: any,
+  tx: SqlTx,
   keeper: Incident,
   absorbed: Incident[],
   now: number,
@@ -161,7 +163,7 @@ async function absorbIncidents(
     WHERE id = ${keeper.id}`;
 }
 
-async function refreshIncidentAggregates(tx: any, incidentId: string, now: number): Promise<void> {
+async function refreshIncidentAggregates(tx: SqlTx, incidentId: string, now: number): Promise<void> {
   const reports = (await tx`SELECT * FROM public.reports WHERE incident_id = ${incidentId} AND withdrawn = 0
     ORDER BY created_at ASC`) as Report[];
   const [incident] = (await tx`SELECT * FROM public.incidents WHERE id = ${incidentId}`) as Incident[];
