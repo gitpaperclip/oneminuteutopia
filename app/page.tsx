@@ -50,6 +50,7 @@ export default function ReportPage() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [isCameraLoading, setIsCameraLoading] = useState(false);
+  const [pendingStream, setPendingStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
     // Request location on mount
@@ -64,6 +65,68 @@ export default function ReportPage() {
       }
     };
   }, [cameraStream]);
+
+  useEffect(() => {
+    // Cleanup pending stream if component unmounts or camera is cancelled
+    return () => {
+      if (pendingStream) {
+        pendingStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [pendingStream]);
+
+  useEffect(() => {
+    // Attach pending stream to video element once it mounts
+    const attachStream = async () => {
+      if (!pendingStream || !videoRef.current || cameraStream) {
+        return;
+      }
+
+      const video = videoRef.current;
+      
+      try {
+        video.srcObject = pendingStream;
+        
+        // Wait for video metadata to load
+        await new Promise<void>((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            reject(new Error('Video stream timeout'));
+          }, 10000);
+          
+          const handleLoadedMetadata = () => {
+            clearTimeout(timeoutId);
+            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            resolve();
+          };
+          
+          video.addEventListener('loadedmetadata', handleLoadedMetadata);
+          
+          // Explicitly play for iOS Safari
+          video.play().catch(reject);
+        });
+        
+        // Successfully attached
+        setCameraStream(pendingStream);
+        setPendingStream(null);
+        setIsCameraLoading(false);
+      } catch (err) {
+        console.error('Video attach error:', err);
+        
+        // Clean up the stream
+        pendingStream.getTracks().forEach(track => track.stop());
+        setPendingStream(null);
+        
+        setIsCameraLoading(false);
+        setShowCamera(false);
+        
+        setError('Unable to display camera stream. Please use the upload option below.');
+      }
+    };
+
+    if (showCamera && pendingStream && videoRef.current) {
+      attachStream();
+    }
+  }, [showCamera, pendingStream, videoRef.current]);
 
   useEffect(() => {
     // Cleanup image preview URLs to prevent memory leaks
@@ -99,13 +162,12 @@ export default function ReportPage() {
 
   const startCamera = async () => {
     setIsCameraLoading(true);
+    setShowCamera(true); // Mount video element first
     setError(null);
     
-    let stream: MediaStream | null = null;
-    
     try {
-      // Request camera with rear-facing preference (mobile-first)
-      stream = await navigator.mediaDevices.getUserMedia({
+      // Request camera stream (don't check videoRef yet - element is mounting)
+      const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'environment',
           width: { ideal: 1920 },
@@ -114,49 +176,24 @@ export default function ReportPage() {
         audio: false,
       });
       
-      if (!videoRef.current) {
-        throw new Error('Video element not available');
-      }
-      
-      // Set up video element for iOS Safari compatibility
-      const video = videoRef.current;
-      video.srcObject = stream;
-      
-      // Wait for video metadata to load before showing camera
-      await new Promise<void>((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-          reject(new Error('Video stream timeout'));
-        }, 10000);
-        
-        const handleLoadedMetadata = () => {
-          clearTimeout(timeoutId);
-          video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-          resolve();
-        };
-        
-        video.addEventListener('loadedmetadata', handleLoadedMetadata);
-        
-        // Explicitly play for iOS Safari
-        video.play().catch(reject);
-      });
-      
-      setCameraStream(stream);
-      setShowCamera(true);
-      setIsCameraLoading(false);
+      // Store stream; useEffect will attach it once video element is ready
+      setPendingStream(stream);
     } catch (err) {
       console.error('Camera error:', err);
       
-      // Clean up stream if initialization failed
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-      
       setIsCameraLoading(false);
       setShowCamera(false);
-      setCameraStream(null);
       
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Unable to access camera: ${errorMessage}. Please use the upload option below.`);
+      
+      // Provide helpful error messages based on common failure modes
+      if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
+        setError('Camera permission denied. Please use the upload option below.');
+      } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('not found')) {
+        setError('No camera found on this device. Please use the upload option below.');
+      } else {
+        setError(`Unable to access camera: ${errorMessage}. Please use the upload option below.`);
+      }
     }
   };
 
@@ -370,11 +407,16 @@ export default function ReportPage() {
                 </button>
                 <button
                   onClick={() => {
+                    // Clean up both active and pending streams
                     if (cameraStream) {
                       cameraStream.getTracks().forEach(track => track.stop());
                     }
+                    if (pendingStream) {
+                      pendingStream.getTracks().forEach(track => track.stop());
+                    }
                     setShowCamera(false);
                     setCameraStream(null);
+                    setPendingStream(null);
                     setIsCameraLoading(false);
                     setError(null);
                   }}
