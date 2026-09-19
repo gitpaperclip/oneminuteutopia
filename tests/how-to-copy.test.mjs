@@ -18,6 +18,7 @@ test('how-to steps cover photo, analysis, and save', () => {
   assert.match(HOW_TO_COPY.steps[1], /AI analysis/i);
   assert.match(HOW_TO_COPY.steps[1], /category/i);
   assert.match(HOW_TO_COPY.steps[2], /Save/i);
+  assert.match(HOW_TO_COPY.steps[2], /community database/i);
   assert.match(HOW_TO_COPY.steps[2], /links|contacts/i);
 });
 
