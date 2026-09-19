@@ -90,8 +90,9 @@ catalog endpoint is not publicly readable.
 
 ## Database setup
 
-Apply `supabase/migrations/202609190002_incident_context_and_clustering.sql`
-and `supabase/migrations/202609190003_baltimore_311_routing.sql` after the two
+Apply `supabase/migrations/202609190002_incident_context_and_clustering.sql`,
+`supabase/migrations/202609190003_baltimore_311_routing.sql`, and
+`supabase/migrations/202609190004_mock_government_submission.sql` after the two
 existing reporting migrations. They backfill existing records with
 broad fallback incident types and create indexes for subtype, tag, and recent
 location matching.
@@ -100,6 +101,14 @@ The clustering constants are exported from `lib/db.ts`. The current radius and
 time window are hackathon defaults rather than validated civic policy. A wider
 deployment should tune them per incident type; a fire and a pothole should not
 necessarily share the same spatial or temporal window.
+
+## Mock government worker
+
+A local Playwright process (`npm run worker`) reads `public.incidents`. It does
+not regroup reports. When `evidence_count >= 2`, coordinates are present, and
+the routing disposition is not `emergency` or `no_submission`, it fills the
+mock government demo form and stores `mock_reference_id` on the incident.
+That confirmation is a demo ID, not a Baltimore City case number.
 
 ## Baltimore 311 handoff
 

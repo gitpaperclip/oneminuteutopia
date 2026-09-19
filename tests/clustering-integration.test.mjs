@@ -9,7 +9,8 @@ const migrations = await Promise.all([
   '202609190000_reporting.sql',
   '202609190001_image_analyses.sql',
   '202609190002_incident_context_and_clustering.sql',
-  '202609190003_baltimore_311_routing.sql'
+  '202609190003_baltimore_311_routing.sql',
+  '202609190004_mock_government_submission.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Run production tagged SQL against an isolated PostgreSQL engine, including its real transactions.
@@ -83,6 +84,8 @@ test('two nearby same-type reports within 72h cluster into one incident with two
   const incidents = await db.query('SELECT * FROM incidents WHERE id = $1', [incident1Id]);
   assert.equal(incidents.rows.length, 1, 'Should have exactly one incident');
   assert.equal(incidents.rows[0].evidence_count, 2, 'Incident should have evidence_count of 2');
+  assert.equal(incidents.rows[0].mock_status, 'pending');
+  assert.equal(incidents.rows[0].mock_reference_id, null);
   
   // Check that we have two reports for one incident
   const reports = await db.query('SELECT * FROM reports WHERE incident_id = $1 ORDER BY created_at', [incident1Id]);

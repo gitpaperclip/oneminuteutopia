@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
-import { DatabaseService } from '@/lib/db';
+import { DatabaseService, type Incident } from '@/lib/db';
 import { CONTEXT_TAGS, INCIDENT_TYPES } from '@/lib/incident-taxonomy.mjs';
 import { HttpError } from '@/lib/hazard-analysis.mjs';
 
@@ -11,6 +11,36 @@ function optionalPreset(value: string | null, allowed: readonly string[], label:
   if (!value) return undefined;
   if (!allowed.includes(value)) throw new HttpError(400, `Unknown ${label} filter.`);
   return value;
+}
+
+function publicIncident(incident: Incident) {
+  return {
+    id: incident.id,
+    category: incident.category,
+    incident_type: incident.incident_type,
+    short_label: incident.short_label,
+    latitude: incident.latitude,
+    longitude: incident.longitude,
+    location_address: incident.location_address,
+    status: incident.status,
+    severity: incident.severity,
+    credibility_score: incident.credibility_score,
+    evidence_count: incident.evidence_count,
+    highest_seriousness: incident.highest_seriousness,
+    average_ai_confidence: incident.average_ai_confidence,
+    tags: incident.tags,
+    baltimore_service_candidates: incident.baltimore_service_candidates,
+    routing_disposition: incident.routing_disposition,
+    created_at: incident.created_at,
+    updated_at: incident.updated_at,
+    last_reported_at: incident.last_reported_at,
+    cluster_radius_m: incident.cluster_radius_m,
+    is_super_report: incident.evidence_count >= 2,
+    mock_reference_id: incident.mock_reference_id,
+    mock_submitted_at: incident.mock_submitted_at,
+    mock_status: incident.mock_status ?? 'pending',
+    mock_error: incident.mock_error,
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -27,29 +57,7 @@ export async function GET(req: NextRequest) {
       const reports = await DatabaseService.getIncidentReports(incidentId);
       return NextResponse.json(
         { 
-          incident: {
-            id: incident.id,
-            category: incident.category,
-            incident_type: incident.incident_type,
-            short_label: incident.short_label,
-            latitude: incident.latitude,
-            longitude: incident.longitude,
-            location_address: incident.location_address,
-            status: incident.status,
-            severity: incident.severity,
-            credibility_score: incident.credibility_score,
-            evidence_count: incident.evidence_count,
-            highest_seriousness: incident.highest_seriousness,
-            average_ai_confidence: incident.average_ai_confidence,
-            tags: incident.tags,
-            baltimore_service_candidates: incident.baltimore_service_candidates,
-            routing_disposition: incident.routing_disposition,
-            created_at: incident.created_at,
-            updated_at: incident.updated_at,
-            last_reported_at: incident.last_reported_at,
-            cluster_radius_m: incident.cluster_radius_m,
-            is_super_report: incident.evidence_count >= 2,
-          },
+          incident: publicIncident(incident),
           reports: reports.map(report => ({
             id: report.id,
             incident_id: report.incident_id,
@@ -92,28 +100,7 @@ export async function GET(req: NextRequest) {
       category, incidentType, tag, commonOnly: commonValue === 'true', limit,
     });
     return NextResponse.json({
-      incidents: incidents.map(incident => ({
-        id: incident.id,
-        category: incident.category,
-        incident_type: incident.incident_type,
-        short_label: incident.short_label,
-        latitude: incident.latitude,
-        longitude: incident.longitude,
-        location_address: incident.location_address,
-        status: incident.status,
-        severity: incident.severity,
-        credibility_score: incident.credibility_score,
-        evidence_count: incident.evidence_count,
-        highest_seriousness: incident.highest_seriousness,
-        average_ai_confidence: incident.average_ai_confidence,
-        tags: incident.tags,
-        baltimore_service_candidates: incident.baltimore_service_candidates,
-        routing_disposition: incident.routing_disposition,
-        created_at: incident.created_at,
-        updated_at: incident.updated_at,
-        last_reported_at: incident.last_reported_at,
-        is_super_report: incident.evidence_count >= 2,
-      })),
+      incidents: incidents.map(incident => publicIncident(incident)),
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     const known = error instanceof HttpError;

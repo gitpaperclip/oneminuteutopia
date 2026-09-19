@@ -9,6 +9,7 @@ const migrations = await Promise.all([
   '202609190000_reporting.sql', '202609190001_image_analyses.sql',
   '202609190002_incident_context_and_clustering.sql',
   '202609190003_baltimore_311_routing.sql',
+  '202609190004_mock_government_submission.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Historical fixtures intentionally do not derive their schema from the new migrations.
@@ -128,6 +129,7 @@ test('upgrading main preserves legacy records and timestamps while supporting th
     highest_seriousness: null, average_ai_confidence: null, ai_evidence_count: 0,
     last_reported_at: legacyTime, cluster_radius_m: 150,
     baltimore_service_candidates: [], routing_disposition: 'manual_review',
+    mock_reference_id: null, mock_submitted_at: null, mock_status: 'pending', mock_error: null,
   });
   assert.deepEqual((await db.query('SELECT * FROM sessions')).rows[0], oldSession);
   assert.deepEqual((await db.query('SELECT * FROM status_events')).rows[0], oldEvent);
