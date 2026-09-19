@@ -287,4 +287,10 @@ export class DatabaseService {
     const [incident] = await sql<Incident[]>`SELECT * FROM public.incidents WHERE id = ${id}`;
     return incident;
   }
+
+  static async getIncidentReports(incidentId: string): Promise<Report[]> {
+    const sql = this.getConnection();
+    const reports = await sql<Report[]>`SELECT * FROM public.reports WHERE incident_id = ${incidentId} AND withdrawn = 0 ORDER BY created_at ASC`;
+    return reports;
+  }
 }
