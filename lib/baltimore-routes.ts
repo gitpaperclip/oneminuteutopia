@@ -204,6 +204,13 @@ export function agencyReportLink(category: string): HandoffLink {
   return { ...preferred, href, reportUrl: href };
 }
 
+/** Chip copy for the analysis page. Opens the official portal; never claims a city filing. */
+export function agencyReportingCopy(category: string): { href: string; label: string } {
+  const link = agencyReportLink(category);
+  const name = link.department ?? link.label;
+  return { href: link.href, label: `Open ${name} reporting` };
+}
+
 export function primaryHandoff(category: string, seriousness?: number | null): HandoffLink {
   const links = handoffsForCategory(category);
   if (isEmergencyHandoff(category, seriousness)) {
