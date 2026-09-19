@@ -14,4 +14,6 @@ export const HOW_TO_COPY = {
   mapHint: 'Nearby reports live on Map. Tap I see this too if you see the same issue.',
   demo: 'This demo prepares and routes a 311-style packet. It does not file with Baltimore City or live 311.',
   emergency: 'If someone is in danger, move to safety and Contact 911.',
+  privacy:
+    'Your report photo and location data may appear on our public map. Avoid reporting confidential or revealing information.',
 } as const;

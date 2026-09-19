@@ -93,6 +93,9 @@ export function HowToOverlay({
           </button>
         </div>
         <p className="leave-copy">{HOW_TO_COPY.what}</p>
+        <p className="info-privacy" role="note">
+          {HOW_TO_COPY.privacy}
+        </p>
         <ol className="info-steps">
           {HOW_TO_COPY.steps.map((step) => (
             <li key={step}>{step}</li>

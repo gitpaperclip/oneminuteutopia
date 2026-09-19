@@ -21,6 +21,13 @@ test('how-to steps cover photo, analysis, and save', () => {
   assert.match(HOW_TO_COPY.steps[2], /links|contacts/i);
 });
 
+test('how-to privacy disclaimer is explicit about public map data', () => {
+  assert.equal(
+    HOW_TO_COPY.privacy,
+    'Your report photo and location data may appear on our public map. Avoid reporting confidential or revealing information.',
+  );
+});
+
 test('how-to mentions map confirmations without city-filing claims', () => {
   assert.match(HOW_TO_COPY.mapHint, /I see this too/);
   assert.match(HOW_TO_COPY.demo, /prepares and routes/i);

@@ -515,6 +515,17 @@ body {
   color: var(--muted);
   border-radius: 12px;
 }
+.info-privacy {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 650;
+}
 .info-steps {
   margin: 0;
   padding: 0 0 0 1.15em;
