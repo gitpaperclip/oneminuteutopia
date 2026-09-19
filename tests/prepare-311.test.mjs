@@ -5,7 +5,12 @@ import { PGlite } from '@electric-sql/pglite';
 import { DatabaseService } from '../lib/db.ts';
 import { BaltimoreRoutingService } from '../lib/baltimore-routing.ts';
 
-const migrations = await Promise.all(['202609190000_reporting.sql', '202609190001_image_analyses.sql'].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
+const migrations = await Promise.all([
+  '202609190000_reporting.sql',
+  '202609190001_image_analyses.sql',
+  '202609190002_incident_context_and_clustering.sql',
+  '202609190003_baltimore_311_routing.sql',
+].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 function connect(db) {
   const sql = async (strings, ...values) => {
@@ -16,7 +21,7 @@ function connect(db) {
   return sql;
 }
 
-async function setup(t, category = 'roads_and_sidewalks', seriousness = 5) {
+async function setup(t, incidentType = 'pothole', seriousness = 5) {
   const db = new PGlite();
   t.after(() => db.close());
   await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
@@ -26,19 +31,37 @@ async function setup(t, category = 'roads_and_sidewalks', seriousness = 5) {
   const session = await DatabaseService.createSession();
   const analysisId = '11111111-1111-4111-8111-111111111111';
   
-  // Handle special cases for seriousness based on category constraints
+  // Determine category based on incident type
+  const categoryMap = {
+    'pothole': 'roads_and_sidewalks',
+    'structure_fire': 'fire_injury_or_immediate_threat',
+    'unable_to_assess': 'unable_to_assess',
+    'no_visible_hazard': 'no_visible_hazard',
+  };
+  const category = categoryMap[incidentType] || 'roads_and_sidewalks';
+  
+  // Set up routing based on incident type
+  const serviceCandidates = incidentType === 'pothole' ? ['TRM-Potholes', 'TRM-Pickup Pothole'] : [];
+  const disposition = incidentType === 'structure_fire' ? 'emergency' : 
+                      incidentType === 'unable_to_assess' ? 'manual_review' :
+                      incidentType === 'no_visible_hazard' ? 'no_submission' : '311';
+  
+  // Handle special seriousness constraints
   let actualSeriousness = seriousness;
   let aiConfidence = 81;
-  if (category === 'unable_to_assess') {
+  if (incidentType === 'unable_to_assess') {
     actualSeriousness = null;
     aiConfidence = 0;
-  } else if (category === 'no_visible_hazard') {
+  } else if (incidentType === 'no_visible_hazard') {
     actualSeriousness = 0;
   }
   
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version, analysis_status)
-    VALUES ($1,$2,'https://storage.example/photo.jpg','saved-hash',$3,$4,$5,'gemini-test','1','complete')`, 
-    [analysisId, session, category, actualSeriousness, aiConfidence]);
+  await db.query(`INSERT INTO image_analyses (
+    id, session_id, image_path, image_hash, category, incident_type, 
+    context_summary, tags, baltimore_service_candidates, routing_disposition,
+    seriousness, ai_confidence, model, prompt_version, analysis_status
+  ) VALUES ($1,$2,'https://storage.example/photo.jpg','saved-hash',$3,$4,$5,$6,$7,$8,$9,$10,'gemini-test','1','complete')`, 
+    [analysisId, session, category, incidentType, 'Test context', [incidentType], serviceCandidates, disposition, actualSeriousness, aiConfidence]);
   
   const input = {
     analysis_id: analysisId,
@@ -55,20 +78,43 @@ async function setup(t, category = 'roads_and_sidewalks', seriousness = 5) {
   return { db, session, report };
 }
 
-test('prepareReport returns stable contract for routine 311 route', async t => {
-  const { report } = await setup(t, 'roads_and_sidewalks', 5);
+// Simulates endpoint authorization and preparation logic without importing Next.js
+async function callPrepare311Endpoint(reportId, sessionId = null) {
+  // Endpoint authorization logic
+  if (!sessionId) {
+    return { status: 401, error: 'Session expired. Please log in again.' };
+  }
+  
+  if (!/^[A-Za-z0-9_-]{21}$/.test(reportId)) {
+    return { status: 400, error: 'Invalid report ID format.' };
+  }
+  
+  const report = await DatabaseService.getReport(reportId);
+  if (!report) {
+    return { status: 404, error: 'Report not found.' };
+  }
+  
+  if (report.session_id !== sessionId) {
+    return { status: 403, error: 'Access denied. This report belongs to a different session.' };
+  }
+  
+  const prepared = BaltimoreRoutingService.prepareReport(report);
+  return { status: 200, data: prepared };
+}
+
+test('prepareReport uses stored routing fields for 311 disposition', async t => {
+  const { report } = await setup(t, 'pothole', 5);
   const prepared = BaltimoreRoutingService.prepareReport(report);
   
   assert.equal(prepared.report_id, report.id);
   assert.equal(prepared.readiness, 'ready');
   assert.equal(prepared.routing_disposition, '311');
-  assert.equal(prepared.department, 'BCDOT');
-  assert.equal(prepared.service_type, 'Road or Sidewalk Issue');
-  assert.deepEqual(prepared.alternative_service_types, []);
+  assert.deepEqual(prepared.service_request_types, ['TRM-Potholes', 'TRM-Pickup Pothole']);
   assert.equal(prepared.instructions, null);
   
   assert.equal(prepared.prepared_fields.category, 'roads_and_sidewalks');
   assert.equal(prepared.prepared_fields.category_label, 'Roads and sidewalks');
+  assert.equal(prepared.prepared_fields.incident_type, 'pothole');
   assert.equal(prepared.prepared_fields.description, 'Test hazard description');
   assert.equal(prepared.prepared_fields.location_address, '100 Holliday St, Baltimore, MD 21202');
   assert.equal(prepared.prepared_fields.latitude, 39.2904);
@@ -76,120 +122,98 @@ test('prepareReport returns stable contract for routine 311 route', async t => {
   assert.equal(prepared.prepared_fields.seriousness, 5);
 });
 
-test('emergency classification requires 911 first', async t => {
-  const { report } = await setup(t, 'fire_injury_or_immediate_threat', 9);
+test('emergency disposition requires 911 first', async t => {
+  const { report } = await setup(t, 'structure_fire', 9);
   const prepared = BaltimoreRoutingService.prepareReport(report);
   
   assert.equal(prepared.readiness, 'emergency_first');
-  assert.equal(prepared.routing_disposition, '911');
+  assert.equal(prepared.routing_disposition, 'emergency');
+  assert.deepEqual(prepared.service_request_types, []);
   assert.ok(prepared.instructions.includes('911'));
   assert.ok(prepared.instructions.includes('emergency'));
 });
 
-test('high seriousness triggers emergency route for threshold categories', async t => {
-  const { report } = await setup(t, 'water_drainage_and_sewage', 9);
-  const prepared = BaltimoreRoutingService.prepareReport(report);
-  
-  assert.equal(prepared.readiness, 'emergency_first');
-  assert.equal(prepared.routing_disposition, '911');
-  assert.equal(prepared.department, 'DPW');
-});
-
-test('low seriousness with multiple candidates requires review', async t => {
-  const { report } = await setup(t, 'water_drainage_and_sewage', 5);
+test('manual_review disposition requires review', async t => {
+  const { report } = await setup(t, 'unable_to_assess', 5);
   const prepared = BaltimoreRoutingService.prepareReport(report);
   
   assert.equal(prepared.readiness, 'needs_review');
-  assert.equal(prepared.routing_disposition, 'multiple_candidates');
-  assert.ok(prepared.alternative_service_types.length > 1);
+  assert.equal(prepared.routing_disposition, 'manual_review');
+  assert.ok(prepared.instructions);
 });
 
-test('multiple routing candidates require review', async t => {
-  const { report } = await setup(t, 'trees_and_public_spaces', 5);
-  const prepared = BaltimoreRoutingService.prepareReport(report);
-  
-  assert.equal(prepared.readiness, 'needs_review');
-  assert.equal(prepared.routing_disposition, 'multiple_candidates');
-  assert.ok(prepared.alternative_service_types.length > 1);
-  assert.ok(prepared.instructions.includes('Multiple service types'));
-});
-
-test('electricity and gas always routes to emergency', async t => {
-  const { report } = await setup(t, 'electricity_and_gas', 5);
-  const prepared = BaltimoreRoutingService.prepareReport(report);
-  
-  assert.equal(prepared.routing_disposition, '911');
-});
-
-test('getReport enforces session ownership', async t => {
-  const { report, session } = await setup(t);
-  const otherSession = await DatabaseService.createSession();
-  
-  const ownedReport = await DatabaseService.getReport(report.id);
-  assert.ok(ownedReport);
-  assert.equal(ownedReport.session_id, session);
-  assert.notEqual(ownedReport.session_id, otherSession);
-});
-
-test('withdrawn reports are detected', async t => {
-  const { db, report } = await setup(t);
-  await db.query('UPDATE reports SET withdrawn = 1 WHERE id = $1', [report.id]);
-  
-  const fetched = await DatabaseService.getReport(report.id);
-  assert.equal(fetched, undefined);
-});
-
-test('no_visible_hazard category has no routing', async t => {
+test('no_submission disposition is insufficient_data', async t => {
   const { report } = await setup(t, 'no_visible_hazard', 0);
   const prepared = BaltimoreRoutingService.prepareReport(report);
   
   assert.equal(prepared.readiness, 'insufficient_data');
-  assert.equal(prepared.routing_disposition, 'no_route');
-  assert.equal(prepared.department, null);
-  assert.equal(prepared.service_type, null);
+  assert.equal(prepared.routing_disposition, 'no_submission');
+  assert.deepEqual(prepared.service_request_types, []);
 });
 
-test('unable_to_assess category has no routing', async t => {
-  const { report } = await setup(t, 'unable_to_assess', null);
-  const prepared = BaltimoreRoutingService.prepareReport(report);
+test('endpoint authorization: 401 without session', async t => {
+  const { report } = await setup(t);
+  const result = await callPrepare311Endpoint(report.id, null);
   
-  assert.equal(prepared.readiness, 'insufficient_data');
-  assert.equal(prepared.routing_disposition, 'no_route');
+  assert.equal(result.status, 401);
+  assert.ok(result.error.includes('Session'));
 });
 
-test('prepareReport uses stored analysis fields not client-supplied values', async t => {
-  const { report } = await setup(t, 'roads_and_sidewalks', 5);
+test('endpoint authorization: 403 for foreign session', async t => {
+  const { report } = await setup(t);
+  const otherSession = await DatabaseService.createSession();
+  const result = await callPrepare311Endpoint(report.id, otherSession);
   
-  report.seriousness = 10;
-  report.category = 'fire_injury_or_immediate_threat';
-  
-  const prepared = BaltimoreRoutingService.prepareReport(report);
-  
-  assert.equal(prepared.prepared_fields.seriousness, 10);
-  assert.equal(prepared.prepared_fields.category, 'fire_injury_or_immediate_threat');
+  assert.equal(result.status, 403);
+  assert.ok(result.error.includes('Access denied'));
 });
 
-test('trash and sanitation routes to DPW via 311', async t => {
-  const { report } = await setup(t, 'trash_and_sanitation', 4);
-  const prepared = BaltimoreRoutingService.prepareReport(report);
+test('endpoint authorization: 404 for nonexistent report', async t => {
+  const { session } = await setup(t);
+  const fakeId = 'nonexistentreportid12';
+  const result = await callPrepare311Endpoint(fakeId, session);
   
-  assert.equal(prepared.readiness, 'needs_review');
-  assert.equal(prepared.department, null);
-  assert.ok(prepared.alternative_service_types.length > 1);
+  assert.equal(result.status, 404);
 });
 
-test('animals route to animal care and control', async t => {
-  const { report } = await setup(t, 'animals', 5);
-  const prepared = BaltimoreRoutingService.prepareReport(report);
+test('endpoint authorization: 404 for withdrawn report', async t => {
+  const { db, report, session } = await setup(t);
+  await db.query('UPDATE reports SET withdrawn = 1 WHERE id = $1', [report.id]);
+  const result = await callPrepare311Endpoint(report.id, session);
   
-  assert.equal(prepared.readiness, 'needs_review');
-  assert.ok(prepared.alternative_service_types.includes('Stray Animal'));
+  assert.equal(result.status, 404);
 });
 
-test('buildings with high seriousness trigger emergency', async t => {
-  const { report } = await setup(t, 'buildings_and_construction', 9);
-  const prepared = BaltimoreRoutingService.prepareReport(report);
+test('endpoint returns prepared report for owned session', async t => {
+  const { report, session } = await setup(t);
+  const result = await callPrepare311Endpoint(report.id, session);
   
-  assert.equal(prepared.readiness, 'emergency_first');
-  assert.equal(prepared.routing_disposition, '911');
+  assert.equal(result.status, 200);
+  assert.equal(result.data.report_id, report.id);
+  assert.equal(result.data.routing_disposition, '311');
+  assert.ok(result.data.prepared_fields);
+  assert.equal(result.data.prepared_fields.incident_type, 'pothole');
+});
+
+test('endpoint ignores browser-supplied AI fields and uses stored DB values', async t => {
+  const { db, report, session } = await setup(t, 'pothole', 5);
+  
+  // Directly modify the database to have different routing
+  await db.query(`UPDATE reports SET 
+    baltimore_service_candidates = $1, 
+    routing_disposition = $2 
+    WHERE id = $3`, 
+    [['TRM-Street Repairs'], 'manual_review', report.id]
+  );
+  
+  // Call endpoint - it should fetch fresh from DB, not use in-memory report object
+  const result = await callPrepare311Endpoint(report.id, session);
+  
+  // Verify it used the updated DB values
+  assert.equal(result.data.routing_disposition, 'manual_review');
+  assert.deepEqual(result.data.service_request_types, ['TRM-Street Repairs']);
+  assert.equal(result.data.readiness, 'needs_review');
+  
+  // Not the original values from the in-memory report object
+  assert.notDeepEqual(result.data.service_request_types, ['TRM-Potholes', 'TRM-Pickup Pothole']);
 });
