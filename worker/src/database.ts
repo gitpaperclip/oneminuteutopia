@@ -35,6 +35,25 @@ export async function fetchIncidents(client: SupabaseClient): Promise<WorkerInci
   return (data ?? []) as WorkerIncident[];
 }
 
+export async function fetchIncident(
+  client: SupabaseClient,
+  incidentId: string,
+): Promise<WorkerIncident | null> {
+  const { data, error } = await client
+    .from('incidents')
+    .select('*')
+    .eq('id', incidentId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`Failed to fetch incident ${incidentId}:\n`);
+    console.error(error.message);
+    return null;
+  }
+
+  return (data as WorkerIncident | null) ?? null;
+}
+
 export async function fetchIncidentReports(
   client: SupabaseClient,
   incidentId: string,
