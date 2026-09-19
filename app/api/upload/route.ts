@@ -53,10 +53,25 @@ function checkRateLimit(sessionId: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  let sessionId: string | null = null;
+  let buffer: Buffer | null = null;
+  let file: File | null = null;
+  let imagePath: string | null = null;
+  let hash: string | null = null;
+  let mimeType: string | undefined = undefined;
+
   try {
-    // Get or create session
-    const sessionId = await SessionService.getOrCreateSession();
-    await SessionService.setSessionCookie(sessionId);
+    // Step 1: Session management
+    try {
+      sessionId = await SessionService.getOrCreateSession();
+      await SessionService.setSessionCookie(sessionId);
+    } catch (error) {
+      console.error('Session creation error:', error);
+      return NextResponse.json(
+        { error: 'Database is not configured. Please contact support.' },
+        { status: 503 }
+      );
+    }
 
     // Rate limiting
     if (!checkRateLimit(sessionId)) {
@@ -66,36 +81,73 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const formData = await req.formData();
-    const file = formData.get('image');
+    // Step 2: File validation
+    try {
+      const formData = await req.formData();
+      file = formData.get('image') as File;
 
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: 'No image provided' }, { status: 400 });
-    }
+      if (!file || !(file instanceof File)) {
+        return NextResponse.json({ error: 'No image provided' }, { status: 400 });
+      }
 
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          { error: 'File too large. Maximum size is 10MB.' },
+          { status: 400 }
+        );
+      }
+
+      mimeType = getImageMimeType(file);
+      if (!mimeType) {
+        return NextResponse.json(
+          { error: 'Unsupported image. Use JPEG, PNG, WebP, HEIC, or HEIF.' },
+          { status: 400 }
+        );
+      }
+
+      buffer = Buffer.from(await file.arrayBuffer());
+    } catch (error) {
+      console.error('File processing error:', error);
       return NextResponse.json(
-        { error: 'File too large. Maximum size is 10MB.' },
+        { error: 'Failed to process the uploaded file. Please try again.' },
         { status: 400 }
       );
     }
 
-    const mimeType = getImageMimeType(file);
-    if (!mimeType) {
+    // Step 3: Save image to Blob storage
+    try {
+      const result = await StorageService.saveImage(buffer, mimeType);
+      imagePath = result.path;
+      hash = result.hash;
+    } catch (error) {
+      console.error('Blob storage error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Check for missing blob configuration
+      if (errorMessage.includes('BLOB_READ_WRITE_TOKEN') || errorMessage.includes('token') || errorMessage.includes('store')) {
+        return NextResponse.json(
+          { error: 'Photo storage is not configured. Please ensure Vercel Blob is connected (needs BLOB_READ_WRITE_TOKEN, BLOB_STORE_ID, or BLOB_READ_WRITE_TOKEN_STORE_ID).' },
+          { status: 503 }
+        );
+      }
+      
       return NextResponse.json(
-        { error: 'Unsupported image. Use JPEG, PNG, WebP, HEIC, or HEIF.' },
-        { status: 400 }
+        { error: `Photo upload failed: ${errorMessage}` },
+        { status: 500 }
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-
-    // Save image
-    const { path: imagePath, hash } = await StorageService.saveImage(buffer, mimeType);
-
-    // Analyze image with Gemini
-    const analysis = await GeminiService.analyzeImage(buffer, mimeType);
+    // Step 4: AI analysis (soft failure - never blocks success if image is saved)
+    let analysis = null;
+    try {
+      analysis = await GeminiService.analyzeImage(buffer, mimeType);
+      
+      if (!analysis) {
+        console.warn('Gemini analysis returned null (timeout or error)');
+      }
+    } catch (error) {
+      console.error('Gemini analysis error (non-blocking):', error);
+    }
 
     return NextResponse.json({
       success: true,
@@ -113,9 +165,10 @@ export async function POST(req: NextRequest) {
       } : null,
     });
   } catch (error) {
-    console.error('Upload/analysis error:', error);
+    console.error('Unexpected upload error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
     return NextResponse.json(
-      { error: 'Failed to process image' },
+      { error: `Upload failed: ${errorMessage}` },
       { status: 500 }
     );
   }
