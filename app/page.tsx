@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnalysisCard } from '@/components/AnalysisCard';
+import { HowToOpenButton, HowToOverlay } from '@/components/HowToPanel';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import {
   CATEGORY_OPTIONS,
@@ -105,6 +106,7 @@ export default function HomePage() {
   const [locBusy, setLocBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const reviewing = capturePhase === 'reviewing';
   const processing = capturePhase === 'processing';
@@ -372,12 +374,21 @@ export default function HomePage() {
     setSubmitting(false);
     setError(null);
     setLeaveOpen(false);
+    setInfoOpen(false);
     setCapturePhase('live');
     setStep('capture');
   }, [replacePreview]);
 
-  const askLeaveReport = () => setLeaveOpen(true);
+  const askLeaveReport = () => {
+    setInfoOpen(false);
+    setLeaveOpen(true);
+  };
   const stayWithReport = () => setLeaveOpen(false);
+  const openHowTo = useCallback(() => {
+    setLeaveOpen(false);
+    setInfoOpen(true);
+  }, []);
+  const closeHowTo = useCallback(() => setInfoOpen(false), []);
 
   const canSubmit =
     !!upload &&
@@ -437,6 +448,7 @@ export default function HomePage() {
       {step === 'capture' && (
         <section className="capture-stage" aria-label="Capture">
           <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
+          <HowToOpenButton className="btn-ghost capture-info" onClick={openHowTo} />
           <div className="camera-bleed" ref={bleedRef}>
             <video
               ref={videoRef}
@@ -554,9 +566,12 @@ export default function HomePage() {
         <section className="analysis-page" aria-labelledby="analysis-title">
           <header className="page-header">
             <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
-            <button type="button" className="text-btn" onClick={askLeaveReport}>
-              Back
-            </button>
+            <div className="page-header-actions">
+              <HowToOpenButton className="text-btn page-header-info" onClick={openHowTo} />
+              <button type="button" className="text-btn" onClick={askLeaveReport}>
+                Back
+              </button>
+            </div>
           </header>
           <div className="analysis-page-body">
             <div className="analysis-stack">
@@ -603,9 +618,12 @@ export default function HomePage() {
         <section className="confirm-stage" aria-label="Confirm report">
           <header className="page-header">
             <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
-            <button type="button" className="text-btn" onClick={askLeaveReport}>
-              Back
-            </button>
+            <div className="page-header-actions">
+              <HowToOpenButton className="text-btn page-header-info" onClick={openHowTo} />
+              <button type="button" className="text-btn" onClick={askLeaveReport}>
+                Back
+              </button>
+            </div>
           </header>
           <div className="confirm-body">
             <div className="confirm-form">
@@ -675,6 +693,8 @@ export default function HomePage() {
           </div>
         </section>
       )}
+
+      <HowToOverlay open={infoOpen} onClose={closeHowTo} />
 
       {leaveOpen && (step === 'analysis' || step === 'confirm') ? (
         <div
