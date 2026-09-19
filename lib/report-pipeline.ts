@@ -37,10 +37,13 @@ export async function prepareReport(buffer: Buffer, sessionId: string, services 
   if (assessment.status === 'rejected') {
     const failure = assessment.reason instanceof GeminiAnalysisError ? assessment.reason : null;
     // The saved reference connects a reporter's failed attempt to Vercel runtime logs.
-    // Do not log the original error, provider body, session, image, or credentials.
+    // Do not log the original error, provider body, session, image, prompts, or credentials.
     console.warn('image_analysis_unavailable', JSON.stringify({
       analysis_id: saved.id, model, code: failure?.code ?? 'unknown',
       http_status: failure?.httpStatus, provider_reason: failure?.providerReason,
+      finish_reason: failure?.finishReason,
+      thoughts_token_count: failure?.thoughtsTokenCount,
+      candidates_token_count: failure?.candidatesTokenCount,
       processing_ms: Math.round(performance.now() - started),
     }));
   }

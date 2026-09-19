@@ -122,7 +122,7 @@ test('production Gemini service sends the image, strict schema and a bounded sin
   let calls = 0;
   const signal = new AbortController().signal;
   t.mock.method(AbortSignal, 'timeout', milliseconds => {
-    assert.equal(milliseconds, 8000);
+    assert.equal(milliseconds, 18000);
     assert.equal(milliseconds, ANALYSIS_TIMEOUT_MS);
     return signal;
   });
@@ -144,8 +144,9 @@ test('production Gemini service sends the image, strict schema and a bounded sin
     assert.equal(config.responseMimeType, 'application/json');
     assert.equal('responseFormat' in config, false);
     assert.equal('responseSchema' in config, false);
-    assert.equal(config.candidateCount, 1);
-    assert.equal(config.maxOutputTokens, 1024);
+    // Gemini 3.x rejects candidateCount (HTTP 400), so it must be omitted.
+    assert.equal('candidateCount' in config, false);
+    assert.equal(config.maxOutputTokens, 8192);
     assert.deepEqual(config.thinkingConfig, { thinkingLevel: 'low' });
     assert.equal(body.contents[0].parts[0].inlineData.data, '/9j/');
     assert.equal(body.contents[0].parts[0].inlineData.mimeType, 'image/jpeg');
@@ -160,28 +161,35 @@ test('model configuration is respected without sending incompatible thinking opt
   configureGemini(t);
   let expectedModel;
   let expectedThinking;
+  let expectedHasCandidateCount;
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     calls++;
     assert.equal(url, `https://generativelanguage.googleapis.com/v1beta/models/${expectedModel}:generateContent`);
     const config = JSON.parse(init.body).generationConfig;
-    assert.equal(config.maxOutputTokens, 1024);
+    assert.equal(config.maxOutputTokens, 8192);
+    // Gemini 3.x rejects candidateCount (HTTP 400); earlier models require it.
+    assert.equal('candidateCount' in config, expectedHasCandidateCount);
+    if (expectedHasCandidateCount) assert.equal(config.candidateCount, 1);
     assert.deepEqual(config.thinkingConfig, expectedThinking);
     if (expectedThinking === undefined) assert.equal('thinkingConfig' in config, false);
     return response(aiResponse());
   });
   const models = [
-    ['gemini-3.8-flash', { thinkingLevel: 'low' }],
-    ['gemini-3.5-flash-lite', { thinkingLevel: 'MINIMAL' }],
-    ['gemini-2.5-flash', { thinkingBudget: 0 }],
-    ['gemini-2.5-flash-lite', { thinkingBudget: 0 }],
-    ['gemini-custom-model', undefined],
-    ['gemini-3.1-flash-lite-image', undefined],
-    ['gemini-3.5-flash-lite-preview', undefined],
+    ['gemini-3.1-flash-lite', { thinkingLevel: 'MINIMAL' }, false],
+    ['gemini-3.5-flash-lite', { thinkingLevel: 'MINIMAL' }, false],
+    ['gemini-2.5-flash', { thinkingBudget: 0 }, true],
+    ['gemini-2.5-flash-lite', { thinkingBudget: 0 }, true],
+    ['gemini-3.8-flash', { thinkingLevel: 'low' }, false],
+    ['gemini-3.8-flash-lite', { thinkingLevel: 'low' }, false],
+    ['gemini-custom-model', undefined, true],
+    ['gemini-3.1-flash-lite-image', undefined, false],
+    ['gemini-3.5-flash-lite-preview', undefined, false],
   ];
-  for (const [model, thinking] of models) {
+  for (const [model, thinking, hasCandidateCount] of models) {
     expectedModel = model;
     expectedThinking = thinking;
+    expectedHasCandidateCount = hasCandidateCount;
     setEnv(t, 'GEMINI_MODEL', `  ${model}  `);
     assert.equal(GeminiService.getModel(), model);
     assert.deepEqual(await GeminiService.analyzeImage(jpeg, 'image/jpeg'), result);
@@ -276,7 +284,7 @@ test('the production timeout signal aborts the request and no second request is 
   configureGemini(t);
   const controller = new AbortController();
   t.mock.method(AbortSignal, 'timeout', milliseconds => {
-    assert.equal(milliseconds, 8000);
+    assert.equal(milliseconds, 18000);
     return controller.signal;
   });
   let calls = 0;
@@ -296,7 +304,7 @@ for (const status of [200, 429]) {
     configureGemini(t);
     const controller = new AbortController();
     t.mock.method(AbortSignal, 'timeout', milliseconds => {
-      assert.equal(milliseconds, 8000);
+      assert.equal(milliseconds, 18000);
       return controller.signal;
     });
     let calls = 0;
