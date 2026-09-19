@@ -102,8 +102,11 @@ export class GeminiService {
               ...(['gemini-2.5-flash', 'gemini-2.5-flash-lite'].includes(model)
                 ? { thinkingConfig: { thinkingBudget: 0 } }
                 : {}),
-              ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-3.8-flash'].includes(model)
+              ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
                 ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } }
+                : {}),
+              ...(model === 'gemini-3.8-flash'
+                ? { thinkingConfig: { thinkingLevel: 'low' } }
                 : {}),
               // Use the established generateContent JSON Schema fields.
               responseMimeType: 'application/json',

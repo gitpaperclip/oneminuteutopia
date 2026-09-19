@@ -146,7 +146,7 @@ test('production Gemini service sends the image, strict schema and a bounded sin
     assert.equal('responseSchema' in config, false);
     assert.equal(config.candidateCount, 1);
     assert.equal(config.maxOutputTokens, 1024);
-    assert.deepEqual(config.thinkingConfig, { thinkingLevel: 'MINIMAL' });
+    assert.deepEqual(config.thinkingConfig, { thinkingLevel: 'low' });
     assert.equal(body.contents[0].parts[0].inlineData.data, '/9j/');
     assert.equal(body.contents[0].parts[0].inlineData.mimeType, 'image/jpeg');
     assert.match(body.systemInstruction.parts[0].text, /untrusted observations/);
@@ -171,7 +171,7 @@ test('model configuration is respected without sending incompatible thinking opt
     return response(aiResponse());
   });
   const models = [
-    ['gemini-3.8-flash', { thinkingLevel: 'MINIMAL' }],
+    ['gemini-3.8-flash', { thinkingLevel: 'low' }],
     ['gemini-3.5-flash-lite', { thinkingLevel: 'MINIMAL' }],
     ['gemini-2.5-flash', { thinkingBudget: 0 }],
     ['gemini-2.5-flash-lite', { thinkingBudget: 0 }],
