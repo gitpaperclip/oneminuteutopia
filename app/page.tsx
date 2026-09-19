@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- camera + blob previews */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnalysisCard } from '@/components/AnalysisCard';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
@@ -492,7 +493,9 @@ export default function HomePage() {
                   <ConfirmIcon />
                 </button>
               </div>
-              <span aria-hidden="true" className="capture-bar-spacer" />
+              <Link href="/map" className="btn-ghost" style={{ justifySelf: 'end' }} aria-label="Open incident map">
+                Map
+              </Link>
             </div>
           )}
           <input
