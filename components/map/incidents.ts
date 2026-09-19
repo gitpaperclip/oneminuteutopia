@@ -1,4 +1,8 @@
 import type { IncidentBbox, MapIncident, MapIncidentsResponse } from '@/lib/map-incident-types';
+import { mappableIncidents } from '@/lib/map-geojson';
+
+export type { MappableIncident } from '@/lib/map-geojson';
+export { mappableIncidents };
 
 export interface MapListFilters {
   category?: string;
@@ -9,33 +13,24 @@ export interface MapListFilters {
   bbox?: IncidentBbox;
 }
 
-export type MappableIncident = MapIncident & { latitude: number; longitude: number };
-
-export function slugLabel(value: string | null | undefined): string {
-  if (!value) return 'Unspecified';
-  return value.replaceAll('_', ' ');
-}
-
-export function formatConfidence(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '—';
-  const pct = value <= 1 ? value * 100 : value;
-  return `${Math.round(pct)}%`;
-}
-
 export function isEmergencyIncident(incident: Pick<MapIncident, 'routing_disposition'>): boolean {
   return incident.routing_disposition === 'emergency';
 }
 
 export function parseMapFilters(searchParams: URLSearchParams): MapListFilters {
   const limitValue = searchParams.get('limit');
-  const limit = limitValue === null ? 50 : Number(limitValue);
+  const limit = limitValue === null ? 100 : Number(limitValue);
   return {
     category: searchParams.get('category') || undefined,
     incident_type: searchParams.get('incident_type') || undefined,
     tag: searchParams.get('tag') || undefined,
     common_only: searchParams.get('common_only') === 'true',
-    limit: Number.isInteger(limit) && limit >= 1 && limit <= 100 ? limit : 50,
+    limit: Number.isInteger(limit) && limit >= 1 && limit <= 100 ? limit : 100,
   };
+}
+
+export function hasActiveFilters(filters: MapListFilters): boolean {
+  return Boolean(filters.category || filters.incident_type || filters.tag || filters.common_only);
 }
 
 export function incidentsQuery(filters: MapListFilters): string {
@@ -44,7 +39,7 @@ export function incidentsQuery(filters: MapListFilters): string {
   if (filters.incident_type) query.set('incident_type', filters.incident_type);
   if (filters.tag) query.set('tag', filters.tag);
   if (filters.common_only) query.set('common_only', 'true');
-  query.set('limit', String(filters.limit ?? 50));
+  query.set('limit', String(filters.limit ?? 100));
   if (filters.bbox) {
     query.set('min_lat', String(filters.bbox.minLat));
     query.set('max_lat', String(filters.bbox.maxLat));
@@ -88,19 +83,10 @@ export function sameBbox(a: IncidentBbox | undefined, b: IncidentBbox): boolean 
   );
 }
 
-export function mappableIncidents(incidents: MapIncident[]): MappableIncident[] {
-  return incidents.flatMap((incident) => {
-    const latitude = Number(incident.latitude);
-    const longitude = Number(incident.longitude);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
-    return [{ ...incident, latitude, longitude }];
-  });
-}
-
 export async function fetchMapIncidents(
   filters: MapListFilters,
   signal?: AbortSignal,
-): Promise<MapIncident[]> {
+): Promise<MapIncidentsResponse> {
   const response = await fetch(incidentsPath(filters), { signal, cache: 'no-store' });
   const data: unknown = await response.json().catch(() => null);
   const errorMessage =
@@ -111,9 +97,55 @@ export async function fetchMapIncidents(
   if (!isMapIncidentsResponse(data)) {
     throw new Error('Incident data is temporarily unavailable.');
   }
-  return data.incidents;
+  return data;
 }
 
 function isMapIncidentsResponse(value: unknown): value is MapIncidentsResponse {
   return !!value && typeof value === 'object' && Array.isArray((value as MapIncidentsResponse).incidents);
+}
+
+export async function fetchConfirmation(
+  incidentId: string,
+  signal?: AbortSignal,
+): Promise<{ confirmation_count: number; viewer_confirmed: boolean }> {
+  const response = await fetch(`/api/incidents/${incidentId}/confirmation`, {
+    signal,
+    cache: 'no-store',
+  });
+  const data: unknown = await response.json().catch(() => null);
+  if (
+    !response.ok ||
+    !data ||
+    typeof data !== 'object' ||
+    !('confirmation_count' in data) ||
+    !('viewer_confirmed' in data)
+  ) {
+    throw new Error('Could not load confirmations.');
+  }
+  return data as { confirmation_count: number; viewer_confirmed: boolean };
+}
+
+export async function setConfirmation(
+  incidentId: string,
+  confirm: boolean,
+): Promise<{ confirmation_count: number; viewer_confirmed: boolean }> {
+  const response = await fetch(`/api/incidents/${incidentId}/confirmation`, {
+    method: confirm ? 'POST' : 'DELETE',
+    cache: 'no-store',
+  });
+  const data: unknown = await response.json().catch(() => null);
+  const errorMessage =
+    data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+      ? data.error
+      : 'Could not update confirmation.';
+  if (!response.ok) throw new Error(errorMessage);
+  if (
+    !data ||
+    typeof data !== 'object' ||
+    !('confirmation_count' in data) ||
+    !('viewer_confirmed' in data)
+  ) {
+    throw new Error('Could not update confirmation.');
+  }
+  return data as { confirmation_count: number; viewer_confirmed: boolean };
 }

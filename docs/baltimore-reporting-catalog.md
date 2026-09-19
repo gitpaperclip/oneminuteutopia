@@ -1,5 +1,7 @@
 # Baltimore civic reporting catalog
 
+This is the longer agency narrative. Receipt **Contacts** copy (department `note`, phones, `reportUrl`) is edited in `lib/baltimore-routes.ts`. Map sheet chrome lives in `lib/map-copy.ts`.
+
 This catalog is the starting point for Baltimore City routing in One Minute Utopia. It maps what a resident can observe to the agency or service that normally owns the next action. It is designed for triage, links, and a human-confirmed handoff; it is not a substitute for emergency dispatch, an official inspection, a police investigation, medical advice, or legal advice.
 
 ## Safety rules for the app

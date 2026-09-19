@@ -138,6 +138,24 @@ npm run build
 that a Gemini request, photo upload, or full report submission succeeds. Run the
 real reporting flow to validate those services.
 
+## Public map
+
+`/map` loads saved incidents from `GET /api/incidents` for the visible bounding
+box and draws them with MapLibre on an OpenMapTiles-compatible style from
+`NEXT_PUBLIC_MAP_STYLE_URL`. MapLibre clustering is a display optimization only.
+Incident matching still uses the existing 150-meter / 72-hour super-report
+rules.
+
+If a viewport has more than the request `limit` (max 100), the API sets
+`truncated: true` and the map tells the user to zoom in. The map does not load
+the entire incident table.
+
+**I see this too** stores one confirmation per session on
+`incident_confirmations` and increments `confirmation_count`. It does not
+increase `evidence_count`, create a report, or file with 311 or the mock portal.
+
+See [docs/map.md](docs/map.md) for copy locations and layer details.
+
 Automated tests use mocked external services. Passing local checks is evidence
 for the implementation, not proof of deployed credentials, applied migrations,
 phone compatibility, or measured end-to-end latency.
@@ -172,17 +190,26 @@ device. They cannot be inferred from a successful local build.
 
 ```text
 app/page.tsx                       Capture, analysis review, and submission
+app/map/page.tsx                   Public incident map
 app/receipt/[id]/page.tsx          Durable report receipt
+app/api/incidents/route.ts         Map-safe incident list and detail
+app/api/incidents/[id]/confirmation/route.ts
+                                   I-see-this-too confirm / unconfirm
 app/api/upload/route.ts           Validate, normalize, store, analyze, and save
 app/api/submit/route.ts           Authoritative report submission
 app/api/health/route.ts           Configuration and database health
 worker/src/index.ts              Poll incidents and file the mock government form
+lib/baltimore-routes.ts            Contacts copy (phones, notes, report URLs)
+lib/map-copy.ts                    Map chrome and selected-sheet copy
 lib/gemini.ts                    Server-side Gemini request
 lib/hazard-analysis.mjs          Prompt, schema, and validation
 lib/analysis-store.ts            Saved analysis persistence
 lib/analysis-labels.ts           Category labels
 lib/db.ts                        Reporting transactions and persistence
 lib/storage.ts                   Supabase photo storage
+docs/baltimore-reporting-catalog.md
+                                   Longer Baltimore agency catalog
+docs/map.md                      Map architecture and truncation behavior
 supabase/migrations/             Explicit database setup
 tests/                           Automated regression checks
 ```
