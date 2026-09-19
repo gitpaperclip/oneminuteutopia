@@ -4,6 +4,9 @@ import { CATEGORY_LABELS } from './analysis-labels.ts';
 import type { PreparedReport, PreparedReportServiceOption } from './prepared-report-types.ts';
 import { build311Description } from './prepare-311-description.mjs';
 
+/** Canonical Baltimore 311 citizen portal URL */
+const BALTIMORE_311_PORTAL_URL = 'https://balt311.baltimorecity.gov/citizen/s/';
+
 export class BaltimoreRoutingService {
   /**
    * Prepare a Baltimore 311 packet for HUMAN REVIEW ONLY.
@@ -45,7 +48,7 @@ export class BaltimoreRoutingService {
           readiness = 'ready';
           readinessMessage = 'Your report packet is ready. Open the Baltimore 311 portal to submit.';
           serviceCode = serviceCandidates[0];
-          intakeUrl = 'https://balt311.baltimorecity.gov/citizen/s/';
+          intakeUrl = BALTIMORE_311_PORTAL_URL;
           phone = '311';
         } else {
           readiness = 'choose_service';
@@ -57,7 +60,7 @@ export class BaltimoreRoutingService {
             owner: 'Baltimore City',
             response_time: null,
           }));
-          intakeUrl = 'https://balt311.baltimorecity.gov/citizen/s/';
+          intakeUrl = BALTIMORE_311_PORTAL_URL;
           phone = '311';
         }
         break;

@@ -95,7 +95,7 @@ async function callPrepare311Endpoint(reportId, sessionId = null) {
   }
   
   if (report.session_id !== sessionId) {
-    return { status: 403, error: 'Access denied. This report belongs to a different session.' };
+    return { status: 404, error: 'Report not found.' };
   }
   
   const prepared = BaltimoreRoutingService.prepareReport(report);
@@ -174,13 +174,13 @@ test('endpoint authorization: 401 without session', async t => {
   assert.ok(result.error.includes('Session'));
 });
 
-test('endpoint authorization: 403 for foreign session', async t => {
+test('endpoint authorization: 404 for foreign session', async t => {
   const { report } = await setup(t);
   const otherSession = await DatabaseService.createSession();
   const result = await callPrepare311Endpoint(report.id, otherSession);
   
-  assert.equal(result.status, 403);
-  assert.ok(result.error.includes('Access denied'));
+  assert.equal(result.status, 404);
+  assert.ok(result.error.includes('not found'));
 });
 
 test('endpoint authorization: 404 for nonexistent report', async t => {

@@ -41,9 +41,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       throw new HttpError(404, 'Report not found.');
     }
 
-    // Verify ownership
+    // Verify ownership - return 404 to avoid leaking report existence
     if (report.session_id !== sessionId) {
-      throw new HttpError(403, 'Access denied. This report belongs to a different session.');
+      throw new HttpError(404, 'Report not found.');
     }
 
     // Prepare the 311 packet for human review (does NOT submit)
