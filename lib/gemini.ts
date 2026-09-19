@@ -1,7 +1,12 @@
 import 'server-only';
 
-import { VertexAI } from '@google-cloud/vertexai';
+import {
+  SchemaType, VertexAI,
+  type GenerateContentRequest, type GenerateContentResult,
+  type GenerationConfig, type ResponseSchema,
+} from '@google-cloud/vertexai';
 import { PROMPT, GEMINI_SCHEMA, parseGemini, imageMime, MAX_IMAGE_BYTES } from './hazard-analysis.mjs';
+import { CONTEXT_TAGS } from './incident-taxonomy.mjs';
 
 export const ANALYSIS_TIMEOUT_MS = 18_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
@@ -12,14 +17,28 @@ type FailureCode = 'configuration' | 'credentials' | 'invalid_request' | 'rate_l
   | 'model_unavailable' | 'provider_unavailable' | 'timeout' | 'network_error'
   | 'blocked_response' | 'output_truncated' | 'invalid_response';
 
-const KEY_FAILURES = new Set([
-  'API_KEY_INVALID', 'API_KEY_EXPIRED', 'API_KEY_SERVICE_BLOCKED',
-  'API_KEY_HTTP_REFERRER_BLOCKED', 'API_KEY_IP_ADDRESS_BLOCKED',
-  'API_KEY_ANDROID_APP_BLOCKED', 'API_KEY_IOS_APP_BLOCKED',
-]);
+type ValidationStage = 'json_parse' | 'contract_validation';
 const SAFE_PROVIDER_REASONS = new Set([
-  ...KEY_FAILURES, 'SERVICE_DISABLED', 'BILLING_DISABLED', 'CONSUMER_INVALID',
+  'SERVICE_DISABLED', 'BILLING_DISABLED', 'CONSUMER_INVALID',
 ]);
+
+// Vertex responseSchema is an OpenAPI-style schema. It is not interchangeable
+// with the JSON Schema used by the Gemini Developer API.
+const VERTEX_RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    category: { type: SchemaType.STRING, enum: [...GEMINI_SCHEMA.properties.category.enum] },
+    incident_type: { type: SchemaType.STRING },
+    seriousness: { type: SchemaType.INTEGER, nullable: true },
+    ai_confidence: { type: SchemaType.INTEGER },
+    context_summary: { type: SchemaType.STRING },
+    context_tags: {
+      type: SchemaType.ARRAY,
+      items: { type: SchemaType.STRING, enum: [...CONTEXT_TAGS] },
+    },
+  },
+  required: [...GEMINI_SCHEMA.required],
+};
 
 export class GeminiAnalysisError extends Error {
   readonly code: FailureCode;
@@ -28,7 +47,7 @@ export class GeminiAnalysisError extends Error {
   readonly finishReason?: string;
   readonly thoughtsTokenCount?: number;
   readonly candidatesTokenCount?: number;
-  providerErrorBody?: unknown;
+  readonly validationStage?: ValidationStage;
 
   constructor(
     code: FailureCode,
@@ -37,16 +56,18 @@ export class GeminiAnalysisError extends Error {
     finishReason?: string,
     thoughtsTokenCount?: number,
     candidatesTokenCount?: number,
+    validationStage?: ValidationStage,
   ) {
     super(`Gemini analysis failed (${code})`);
     this.name = 'GeminiAnalysisError';
     this.code = code;
     this.httpStatus = httpStatus;
-    // Never retain arbitrary provider text, which can echo request data or credentials.
+    // Never retain arbitrary provider text, which can echo request data.
     this.providerReason = providerReason && SAFE_PROVIDER_REASONS.has(providerReason) ? providerReason : undefined;
     this.finishReason = finishReason;
     this.thoughtsTokenCount = thoughtsTokenCount;
     this.candidatesTokenCount = candidatesTokenCount;
+    this.validationStage = validationStage;
   }
 }
 
@@ -77,25 +98,14 @@ function getVertexConfig(): { project: string; location: string; credentials?: o
   throw new GeminiAnalysisError('configuration');
 }
 
-async function requestFailure(response: Response): Promise<GeminiAnalysisError> {
-  const body = await response.json().catch(() => null);
-  const errorObj = record(body).error;
-  const details = record(errorObj).details;
-  const reason = Array.isArray(details)
-    ? details.map(detail => record(detail).reason).find((value): value is string =>
-      typeof value === 'string' && SAFE_PROVIDER_REASONS.has(value))
-    : undefined;
-  const status = response.status;
-  let code: FailureCode = 'invalid_request';
-  if ((reason && KEY_FAILURES.has(reason)) || status === 401 || status === 403) code = 'credentials';
-  else if (status === 429) code = 'rate_limited';
-  else if (status === 404) code = 'model_unavailable';
-  else if (status >= 500) code = 'provider_unavailable';
-  const error = new GeminiAnalysisError(code, status, reason);
-  if (status === 400 && body) {
-    (error as { providerErrorBody?: unknown }).providerErrorBody = body;
+function vertexHttpStatus(error: unknown): number | undefined {
+  const value = record(error);
+  for (const candidate of [value.code, value.status, value.statusCode]) {
+    if (typeof candidate === 'number' && candidate >= 400 && candidate <= 599) return candidate;
+    if (typeof candidate === 'string' && /^\d{3}$/.test(candidate)) return Number(candidate);
   }
-  return error;
+  const match = error instanceof Error ? error.message.match(/\b([45]\d{2})\b/) : null;
+  return match ? Number(match[1]) : undefined;
 }
 
 export interface AnalysisResult {
@@ -107,6 +117,31 @@ export interface AnalysisResult {
   context_tags: string[];
 }
 
+interface VertexModelClient {
+  generateContent(request: GenerateContentRequest): Promise<GenerateContentResult>;
+}
+
+export type VertexModelFactory = (options: {
+  project: string;
+  location: string;
+  credentials?: object;
+  model: string;
+  generationConfig: GenerationConfig;
+}) => VertexModelClient;
+
+const createVertexModel: VertexModelFactory = options => {
+  const vertexAI = new VertexAI({
+    project: options.project,
+    location: options.location,
+    googleAuthOptions: options.credentials ? { credentials: options.credentials } : undefined,
+  });
+  return vertexAI.getGenerativeModel({
+    model: options.model,
+    systemInstruction: { role: 'system', parts: [{ text: PROMPT }] },
+    generationConfig: options.generationConfig,
+  });
+};
+
 export class GeminiService {
   static getModel(): string {
     const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
@@ -116,7 +151,11 @@ export class GeminiService {
     return model;
   }
 
-  static async analyzeImage(imageBuffer: Buffer, mimeType: string): Promise<AnalysisResult> {
+  static async analyzeImage(
+    imageBuffer: Buffer,
+    mimeType: string,
+    modelFactory: VertexModelFactory = createVertexModel,
+  ): Promise<AnalysisResult> {
     if (imageBuffer.length > MAX_IMAGE_BYTES || imageBuffer.length === 0) throw new Error('Image size is invalid');
     // The upload route decodes and normalizes the image before calling this service.
     if (imageMime(imageBuffer) !== mimeType) {
@@ -128,36 +167,33 @@ export class GeminiService {
     const signal = AbortSignal.timeout(ANALYSIS_TIMEOUT_MS);
     
     try {
-      const vertexAI = new VertexAI({
+      const generationConfig: GenerationConfig = {
+        // Gemini 3.x rejects candidateCount; earlier models require it.
+        ...(model.startsWith('gemini-3.') ? {} : { candidateCount: 1 }),
+        // Gemini 3.8 Flash thinking (even on 'low') plus JSON output requires more headroom.
+        // For models without thinking or with thinking disabled, 8192 is safely above need.
+        maxOutputTokens: 8192,
+        // Flash 2.5 otherwise spends a variable budget thinking before a small classification.
+        ...(['gemini-2.5-flash', 'gemini-2.5-flash-lite'].includes(model)
+          ? { thinkingConfig: { thinkingBudget: 0 } }
+          : {}),
+        ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
+          ? { thinkingConfig: { thinkingLevel: 'minimal' } }
+          : {}),
+        // Gemini 3.8 Flash enables thinking by default; 'low' provides fast inference with thinking headroom.
+        ...(model.startsWith('gemini-3.8-flash')
+          ? { thinkingConfig: { thinkingLevel: 'low' } }
+          : {}),
+        // Use the typed OpenAPI schema required by this Vertex SDK.
+        responseMimeType: 'application/json',
+        responseSchema: VERTEX_RESPONSE_SCHEMA,
+      };
+      const generativeModel = modelFactory({
         project: config.project,
         location: config.location,
-        googleAuthOptions: config.credentials ? { credentials: config.credentials } : undefined,
-      });
-      
-      const generativeModel = vertexAI.getGenerativeModel({
+        credentials: config.credentials,
         model,
-        systemInstruction: { role: 'system', parts: [{ text: PROMPT }] },
-        generationConfig: {
-          // Gemini 3.x rejects candidateCount; earlier models require it.
-          ...(model.startsWith('gemini-3.') ? {} : { candidateCount: 1 }),
-          // Gemini 3.8 Flash thinking (even on 'low') plus JSON output requires more headroom.
-          // For models without thinking or with thinking disabled, 8192 is safely above need.
-          maxOutputTokens: 8192,
-          // Flash 2.5 otherwise spends a variable budget thinking before a small classification.
-          ...(['gemini-2.5-flash', 'gemini-2.5-flash-lite'].includes(model)
-            ? { thinkingConfig: { thinkingBudget: 0 } }
-            : {}),
-          ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
-            ? { thinkingConfig: { thinkingLevel: 'minimal' } }
-            : {}),
-          // Gemini 3.8 Flash enables thinking by default; 'low' provides fast inference with thinking headroom.
-          ...(model.startsWith('gemini-3.8-flash')
-            ? { thinkingConfig: { thinkingLevel: 'low' } }
-            : {}),
-          // Use the established generateContent JSON Schema fields.
-          responseMimeType: 'application/json',
-          responseSchema: GEMINI_SCHEMA as any,
-        },
+        generationConfig,
       });
       
       const request = {
@@ -169,7 +205,7 @@ export class GeminiService {
         signal.addEventListener('abort', () => reject(signal.reason), { once: true });
       });
       
-      const response = await Promise.race([responsePromise, timeoutPromise]) as any;
+      const response = await Promise.race([responsePromise, timeoutPromise]) as GenerateContentResult;
       
       const data: unknown = response.response;
       const candidates = record(data).candidates;
@@ -188,23 +224,23 @@ export class GeminiService {
       
       try {
         return parseGemini(data) as AnalysisResult;
-      } catch {
-        throw new GeminiAnalysisError('invalid_response', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount);
+      } catch (error) {
+        const validationStage: ValidationStage = error instanceof Error && error.message.includes('invalid assessment')
+          ? 'contract_validation' : 'json_parse';
+        throw new GeminiAnalysisError('invalid_response', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount, validationStage);
       }
     } catch (error) {
       // The same deadline covers both the request and reading its response body.
       if (signal.aborted) throw new GeminiAnalysisError('timeout');
       if (error instanceof GeminiAnalysisError) throw error;
       
-      // Map Vertex AI errors to our error codes
-      const errorMessage = String(error);
-      if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('credential')) {
-        throw new GeminiAnalysisError('credentials');
-      }
-      if (errorMessage.includes('429')) throw new GeminiAnalysisError('rate_limited');
-      if (errorMessage.includes('404')) throw new GeminiAnalysisError('model_unavailable');
-      if (errorMessage.includes('503') || /5\d{2}/.test(errorMessage)) throw new GeminiAnalysisError('provider_unavailable');
-      if (errorMessage.includes('400')) throw new GeminiAnalysisError('invalid_request');
+      // Map only status metadata; never retain arbitrary provider messages.
+      const status = vertexHttpStatus(error);
+      if (status === 401 || status === 403) throw new GeminiAnalysisError('credentials', status);
+      if (status === 429) throw new GeminiAnalysisError('rate_limited', status);
+      if (status === 404) throw new GeminiAnalysisError('model_unavailable', status);
+      if (status !== undefined && status >= 500) throw new GeminiAnalysisError('provider_unavailable', status);
+      if (status === 400) throw new GeminiAnalysisError('invalid_request', status);
       
       throw new GeminiAnalysisError('network_error');
     }
