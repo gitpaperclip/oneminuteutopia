@@ -57,13 +57,6 @@ body {
   top: calc(10px + env(safe-area-inset-top, 0px));
   right: calc(12px + env(safe-area-inset-right, 0px));
   z-index: 5;
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  justify-self: unset;
 }
 
 .capture-stage {
@@ -137,6 +130,18 @@ body {
   justify-self: start;
   min-height: 44px;
   transition: opacity .22s ease;
+}
+/* Beat .btn-ghost padding so the (i) sits on the true 44×44 grid center. */
+.btn-ghost.capture-info {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  justify-self: unset;
+  line-height: 0;
 }
 .capture-map { justify-self: end; }
 .btn-ghost:disabled { opacity: .28; }
@@ -355,7 +360,7 @@ body {
   min-width: 44px;
   padding: 10px 8px;
 }
-.page-header-info {
+.page-header .text-btn.page-header-info {
   display: grid;
   place-items: center;
   width: 44px;
@@ -363,6 +368,7 @@ body {
   min-height: 44px;
   padding: 0;
   color: var(--blue);
+  line-height: 0;
 }
 
 .analysis-page {
@@ -524,7 +530,13 @@ body {
   color: #92400e;
   font-size: 13px;
   line-height: 1.4;
-  font-weight: 650;
+  font-weight: 500;
+}
+.info-privacy strong {
+  font-weight: 750;
+}
+.info-privacy u {
+  text-underline-offset: 2px;
 }
 .info-steps {
   margin: 0;
