@@ -38,6 +38,7 @@ export function MapShell() {
   const urlFilters = useMemo(() => parseMapFilters(searchParams), [searchParams]);
   const urlKey = urlFiltersQuery(urlFilters);
   const [bbox, setBbox] = useState<IncidentBbox | undefined>(undefined);
+  const [allowUnbounded, setAllowUnbounded] = useState(false);
   const filters = useMemo(() => ({ ...urlFilters, bbox }), [urlFilters, bbox]);
   const queryKey = incidentsQuery(filters);
   const [incidents, setIncidents] = useState<MapIncident[] | null>(null);
@@ -46,13 +47,19 @@ export function MapShell() {
   const [loadedUrlKey, setLoadedUrlKey] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
-  const waitingForBounds = !bbox;
+  const waitingForBounds = !bbox && !allowUnbounded;
   const loading = waitingForBounds || loadedUrlKey !== urlKey;
   const refreshing = !loading && loadedKey !== queryKey;
   const bboxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!bbox) return;
+    if (bbox) return;
+    const timer = setTimeout(() => setAllowUnbounded(true), 2000);
+    return () => clearTimeout(timer);
+  }, [bbox]);
+
+  useEffect(() => {
+    if (!bbox && !allowUnbounded) return;
     const controller = new AbortController();
     fetchMapIncidents(filters, controller.signal)
       .then((rows) => {
@@ -70,7 +77,7 @@ export function MapShell() {
         setLoadedUrlKey(urlKey);
       });
     return () => controller.abort();
-  }, [bbox, filters, queryKey, retryTick, urlKey]);
+  }, [allowUnbounded, bbox, filters, queryKey, retryTick, urlKey]);
 
   const onBounds = useCallback((next: IncidentBbox) => {
     const rounded = roundBbox(next);
