@@ -65,7 +65,7 @@ export default async function ReceiptPage({ params }: PageProps) {
           <div>
             <h3 className="text-sm font-medium text-gray-500 mb-1">Submitted</h3>
             <p className="text-gray-900">
-              {new Date(report.created_at).toLocaleString()}
+              {DatabaseService.formatTimestamp(report.created_at, 'locale')}
             </p>
           </div>
 

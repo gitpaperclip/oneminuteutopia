@@ -1,5 +1,6 @@
 import postgres from 'postgres';
 import { nanoid } from 'nanoid';
+import { formatTimestamp } from './utils';
 
 // Configuration note: For Supabase on Vercel serverless, use the Transaction pooler URI
 // (port 6543, host ending in pooler.supabase.com) in DATABASE_URL.
@@ -89,6 +90,12 @@ export class DatabaseService {
     }
   }
 
+  /**
+   * Safely format epoch milliseconds (number or numeric string) to a localized date string.
+   * Returns "Unknown" for invalid/null/undefined values instead of "Invalid Date".
+   */
+  static formatTimestamp = formatTimestamp;
+
   static async ensureTablesExist(): Promise<void> {
     try {
       // Test connection first
@@ -161,6 +168,57 @@ export class DatabaseService {
           last_seen BIGINT NOT NULL
         )
       `;
+
+      // Add missing columns to existing tables (idempotent)
+      // Reports table columns
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS incident_id TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS session_id TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS image_path TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS image_hash TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS category TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS short_label TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS full_description TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS user_description TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS location_accuracy DOUBLE PRECISION`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS location_source TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS location_address TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS ai_confidence DOUBLE PRECISION`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS ai_model TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS ai_routing TEXT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS user_corrected INTEGER DEFAULT 0`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS created_at BIGINT`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS withdrawn INTEGER DEFAULT 0`;
+      await sql`ALTER TABLE reports ADD COLUMN IF NOT EXISTS idempotency_key TEXT`;
+
+      // Incidents table columns
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS category TEXT`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS short_label TEXT`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS full_description TEXT`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS location_address TEXT`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'reported'`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS severity TEXT DEFAULT 'normal'`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS credibility_score INTEGER DEFAULT 0`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS evidence_count INTEGER DEFAULT 1`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS created_at BIGINT`;
+      await sql`ALTER TABLE incidents ADD COLUMN IF NOT EXISTS updated_at BIGINT`;
+
+      // Status events table columns
+      await sql`ALTER TABLE status_events ADD COLUMN IF NOT EXISTS incident_id TEXT`;
+      await sql`ALTER TABLE status_events ADD COLUMN IF NOT EXISTS old_status TEXT`;
+      await sql`ALTER TABLE status_events ADD COLUMN IF NOT EXISTS new_status TEXT`;
+      await sql`ALTER TABLE status_events ADD COLUMN IF NOT EXISTS actor_session TEXT`;
+      await sql`ALTER TABLE status_events ADD COLUMN IF NOT EXISTS actor_type TEXT`;
+      await sql`ALTER TABLE status_events ADD COLUMN IF NOT EXISTS reason TEXT`;
+      await sql`ALTER TABLE status_events ADD COLUMN IF NOT EXISTS created_at BIGINT`;
+
+      // Sessions table columns
+      await sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_organizer INTEGER DEFAULT 0`;
+      await sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at BIGINT`;
+      await sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_seen BIGINT`;
 
       // Create indexes if they don't exist
       await sql`CREATE INDEX IF NOT EXISTS idx_reports_incident ON reports(incident_id)`;

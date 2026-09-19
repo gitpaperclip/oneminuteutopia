@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { formatTimestamp } from '@/lib/utils';
 
 interface Report {
   id: string;
@@ -123,12 +124,12 @@ export default function CoordinatorPage() {
           `${incident.latitude.toFixed(6)}, ${incident.longitude.toFixed(6)}` : 
           'No location'),
       status: incident.status,
-      reported: new Date(incident.created_at).toISOString(),
+      reported: formatTimestamp(incident.created_at, 'iso'),
       evidence_count: incident.reports.length,
       reports: incident.reports.map(r => ({
         report_id: r.id,
         image_url: r.image_path,
-        reported_at: new Date(r.created_at).toISOString(),
+        reported_at: formatTimestamp(r.created_at, 'iso'),
       })),
     };
 
@@ -257,7 +258,7 @@ export default function CoordinatorPage() {
                   </p>
 
                   <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>{new Date(incident.created_at).toLocaleDateString()}</span>
+                    <span>{formatTimestamp(incident.created_at, 'date')}</span>
                     <span>{incident.reports.length} {incident.reports.length === 1 ? 'report' : 'reports'}</span>
                   </div>
                 </div>
@@ -334,7 +335,7 @@ export default function CoordinatorPage() {
                         className="w-full h-32 object-cover"
                       />
                       <div className="p-2 text-xs text-gray-600">
-                        {new Date(report.created_at).toLocaleString()}
+                        {formatTimestamp(report.created_at, 'locale')}
                       </div>
                     </div>
                   ))}
