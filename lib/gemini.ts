@@ -3,7 +3,7 @@ import 'server-only';
 import { PROMPT, SCHEMA, parseGemini, imageMime, MAX_IMAGE_BYTES } from './hazard-analysis.mjs';
 
 export const ANALYSIS_TIMEOUT_MS = 8_000;
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
 
 type FailureCode = 'configuration' | 'credentials' | 'invalid_request' | 'rate_limited'
   | 'model_unavailable' | 'provider_unavailable' | 'timeout' | 'network_error'
@@ -93,12 +93,16 @@ export class GeminiService {
             contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageBuffer.toString('base64') } }] }],
             generationConfig: {
               candidateCount: 1,
-              maxOutputTokens: 256,
+              // This limit includes thought tokens as well as the three-field JSON result.
+              maxOutputTokens: 1024,
               // Flash 2.5 otherwise spends a variable budget thinking before a small classification.
               ...(['gemini-2.5-flash', 'gemini-2.5-flash-lite'].includes(model)
                 ? { thinkingConfig: { thinkingBudget: 0 } }
                 : {}),
-              // Use the established generateContent JSON Schema fields for Gemini 2.5.
+              ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
+                ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } }
+                : {}),
+              // Use the established generateContent JSON Schema fields.
               responseMimeType: 'application/json',
               responseJsonSchema: SCHEMA,
             },

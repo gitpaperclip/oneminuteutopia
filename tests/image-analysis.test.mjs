@@ -114,7 +114,7 @@ test('production Gemini service sends the image, strict schema and a bounded sin
   });
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     calls++;
-    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent');
     assert.equal(init.headers['x-goog-api-key'], 'test-key');
     assert.ok(!url.includes('test-key'));
     assert.equal(init.signal, signal);
@@ -130,8 +130,8 @@ test('production Gemini service sends the image, strict schema and a bounded sin
     assert.equal('responseFormat' in config, false);
     assert.equal('responseSchema' in config, false);
     assert.equal(config.candidateCount, 1);
-    assert.equal(config.maxOutputTokens, 256);
-    assert.equal(config.thinkingConfig.thinkingBudget, 0);
+    assert.equal(config.maxOutputTokens, 1024);
+    assert.deepEqual(config.thinkingConfig, { thinkingLevel: 'MINIMAL' });
     assert.equal(body.contents[0].parts[0].inlineData.data, '/9j/');
     assert.equal(body.contents[0].parts[0].inlineData.mimeType, 'image/jpeg');
     assert.match(body.systemInstruction.parts[0].text, /untrusted observations/);
@@ -142,13 +142,36 @@ test('production Gemini service sends the image, strict schema and a bounded sin
 });
 
 test('model configuration is respected without sending incompatible thinking options', async t => {
-  configureGemini(t, '  gemini-custom-model  ');
+  configureGemini(t);
+  let expectedModel;
+  let expectedThinking;
+  let calls = 0;
   t.mock.method(globalThis, 'fetch', async (url, init) => {
-    assert.match(url, /gemini-custom-model:generateContent$/);
-    assert.ok(!('thinkingConfig' in JSON.parse(init.body).generationConfig));
+    calls++;
+    assert.equal(url, `https://generativelanguage.googleapis.com/v1beta/models/${expectedModel}:generateContent`);
+    const config = JSON.parse(init.body).generationConfig;
+    assert.equal(config.maxOutputTokens, 1024);
+    assert.deepEqual(config.thinkingConfig, expectedThinking);
+    if (expectedThinking === undefined) assert.equal('thinkingConfig' in config, false);
     return response(aiResponse());
   });
-  await GeminiService.analyzeImage(jpeg, 'image/jpeg');
+  const models = [
+    ['gemini-3.1-flash-lite', { thinkingLevel: 'MINIMAL' }],
+    ['gemini-3.5-flash-lite', { thinkingLevel: 'MINIMAL' }],
+    ['gemini-2.5-flash', { thinkingBudget: 0 }],
+    ['gemini-2.5-flash-lite', { thinkingBudget: 0 }],
+    ['gemini-custom-model', undefined],
+    ['gemini-3.1-flash-lite-image', undefined],
+    ['gemini-3.5-flash-lite-preview', undefined],
+  ];
+  for (const [model, thinking] of models) {
+    expectedModel = model;
+    expectedThinking = thinking;
+    setEnv(t, 'GEMINI_MODEL', `  ${model}  `);
+    assert.equal(GeminiService.getModel(), model);
+    assert.deepEqual(await GeminiService.analyzeImage(jpeg, 'image/jpeg'), result);
+  }
+  assert.equal(calls, models.length);
 });
 
 test('invalid input and missing credentials fail before calling Gemini', async t => {
