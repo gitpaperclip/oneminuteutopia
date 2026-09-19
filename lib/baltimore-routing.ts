@@ -2,6 +2,12 @@ import 'server-only';
 import type { Report } from './db.ts';
 import { CATEGORY_LABELS } from './analysis-labels.ts';
 
+/**
+ * Prepared 311 report packet for HUMAN REVIEW ONLY.
+ * 
+ * This is NOT a submission confirmation. The app prepares this data for the user
+ * to review and manually submit to Baltimore 311 themselves. No automated submission occurs.
+ */
 export interface PreparedReport {
   report_id: string;
   readiness: 'ready' | 'emergency_first' | 'needs_review' | 'insufficient_data';
@@ -24,7 +30,11 @@ export interface PreparedReport {
 
 export class BaltimoreRoutingService {
   /**
-   * Prepare a Baltimore 311 packet from a stored report.
+   * Prepare a Baltimore 311 packet for HUMAN REVIEW ONLY.
+   * 
+   * CRITICAL: This does NOT submit to Baltimore 311. It prepares data for the user
+   * to review and manually submit themselves. No 311 API calls, no Open311, no city portal automation.
+   * 
    * Derives routing from trusted stored analysis fields, not browser-supplied AI fields.
    */
   static prepareReport(report: Report): PreparedReport {
@@ -42,14 +52,16 @@ export class BaltimoreRoutingService {
       case '311':
         readiness = serviceCandidates.length > 0 ? 'ready' : 'needs_review';
         if (serviceCandidates.length === 0) {
-          instructions = 'No specific service request types were identified. Contact Baltimore 311 directly for assistance.';
+          instructions = 'No specific service request types were identified. Review this information and contact Baltimore 311 directly for assistance.';
+        } else {
+          instructions = 'Review this information before manually submitting to Baltimore 311. This app does not submit reports automatically.';
         }
         break;
       case 'manual_review':
         readiness = 'needs_review';
         instructions = serviceCandidates.length > 1
-          ? 'Multiple service types match this issue. Please review and select the most appropriate option before submitting to Baltimore 311.'
-          : 'This report requires review before submission to Baltimore 311.';
+          ? 'Multiple service types match this issue. Please review and select the most appropriate option before manually submitting to Baltimore 311.'
+          : 'This report requires review before manual submission to Baltimore 311. This app does not submit reports automatically.';
         break;
       case 'no_submission':
         readiness = 'insufficient_data';
@@ -57,7 +69,7 @@ export class BaltimoreRoutingService {
         break;
       default:
         readiness = 'needs_review';
-        instructions = 'Unable to determine appropriate routing. Contact Baltimore 311 directly for assistance.';
+        instructions = 'Unable to determine appropriate routing. Review this information and contact Baltimore 311 directly for assistance.';
     }
 
     return {

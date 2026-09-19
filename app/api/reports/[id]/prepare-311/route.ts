@@ -10,6 +10,16 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * GET /api/reports/{id}/prepare-311
+ * 
+ * Prepares a Baltimore 311 packet for HUMAN REVIEW AND MANUAL SUBMISSION ONLY.
+ * 
+ * CRITICAL: This endpoint does NOT submit to Baltimore 311. It does NOT call any
+ * 311 API, Open311 service, or city portal. It ONLY prepares data for the user
+ * to review and manually submit themselves. The response is for user review, not
+ * a submission confirmation.
+ */
 export async function GET(req: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
@@ -36,7 +46,7 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
       throw new HttpError(403, 'Access denied. This report belongs to a different session.');
     }
 
-    // Prepare the 311 packet
+    // Prepare the 311 packet for human review (does NOT submit)
     const preparedReport = BaltimoreRoutingService.prepareReport(report);
 
     return NextResponse.json(preparedReport, {
