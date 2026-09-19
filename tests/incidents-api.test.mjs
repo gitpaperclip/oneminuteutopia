@@ -45,9 +45,9 @@ async function setup(t) {
 async function insertAnalysis(db, { id, session, incidentType = 'pothole', category = 'roads_and_sidewalks', seriousness = 6, confidence = 81 }) {
   await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type,
     seriousness, ai_confidence, context_summary, context_tags, tags, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo.jpg','saved-hash',$3,$4,
-    $5,$6,'A civic issue is visible.',array['roadway'],array[$4,'roadway'],'gemini-test','2')`,
-  [id, session, category, incidentType, seriousness, confidence]);
+    VALUES ($1,$2,$3,$4,$5,$6,
+    $7,$8,'A civic issue is visible.',array['roadway'],array[$6,'roadway'],'gemini-test','2')`,
+  [id, session, `https://storage.example/${id}.jpg`, `saved-hash-${id}`, category, incidentType, seriousness, confidence]);
 }
 
 function gpsInput(analysisId, latitude, longitude) {
