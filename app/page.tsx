@@ -171,38 +171,6 @@ export default function HomePage() {
     if (!preview) void video.play().catch(() => undefined);
   }, [cameraOn, preview, step]);
 
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'production') return;
-    const stage = new URLSearchParams(window.location.search).get('ui');
-    if (stage !== 'analysis' && stage !== 'confirm' && stage !== 'analysis-emergency') return;
-    let cancelled = false;
-    void fetch('/logo-mark.png')
-      .then((res) => res.blob())
-      .then((blob) => {
-        if (cancelled) return;
-        const emergency = stage === 'analysis-emergency';
-        replacePreview(URL.createObjectURL(blob));
-        setUpload({
-          analysis_id: 'ui-preview',
-          analysis_status: 'complete',
-          analysis: {
-            category: emergency ? 'fire_injury_or_immediate_threat' : 'roads_and_sidewalks',
-            seriousness: emergency ? 10 : 6,
-            ai_confidence: 80,
-          },
-        });
-        setCategory(emergency ? 'fire_injury_or_immediate_threat' : 'roads_and_sidewalks');
-        if (stage === 'confirm') {
-          setGps({ latitude: 39.2904, longitude: -76.6122, accuracy: 12 });
-          setLocMode('gps');
-        }
-        setStep(stage === 'confirm' ? 'confirm' : 'analysis');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [replacePreview]);
-
   const beginReview = useCallback(
     (file: File) => {
       pendingFile.current = file;
