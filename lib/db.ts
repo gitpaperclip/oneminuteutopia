@@ -1,4 +1,4 @@
-import { sql } from '@vercel/postgres';
+import postgres from 'postgres';
 import { nanoid } from 'nanoid';
 
 export interface Report {
@@ -42,8 +42,37 @@ export interface Incident {
 }
 
 export class DatabaseService {
+  private static sql: ReturnType<typeof postgres> | null = null;
+
+  static getConnection(): ReturnType<typeof postgres> {
+    if (this.sql) return this.sql;
+
+    // Prefer Supabase DATABASE_URL over legacy Vercel POSTGRES_URL
+    const connectionString = 
+      process.env.DATABASE_URL ||
+      process.env.SUPABASE_DB_URL ||
+      process.env.POSTGRES_URL ||
+      process.env.POSTGRES_PRISMA_URL ||
+      process.env.POSTGRES_URL_NON_POOLING;
+
+    if (!connectionString) {
+      throw new Error('No database connection string found. Set DATABASE_URL or SUPABASE_DB_URL.');
+    }
+
+    this.sql = postgres(connectionString, {
+      ssl: connectionString.includes('supabase.co') ? 'require' : undefined,
+      max: 10,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    });
+
+    return this.sql;
+  }
+
   static async ensureTablesExist(): Promise<void> {
     try {
+      const sql = this.getConnection();
+      
       await sql`
         CREATE TABLE IF NOT EXISTS reports (
           id TEXT PRIMARY KEY,
@@ -123,6 +152,7 @@ export class DatabaseService {
 
   static async createSession(): Promise<string> {
     await this.ensureTablesExist();
+    const sql = this.getConnection();
     const sessionId = nanoid();
     const now = Date.now();
     
@@ -135,21 +165,24 @@ export class DatabaseService {
   }
 
   static async updateSessionActivity(sessionId: string): Promise<void> {
+    const sql = this.getConnection();
     await sql`
       UPDATE sessions SET last_seen = ${Date.now()} WHERE id = ${sessionId}
     `;
   }
 
   static async isOrganizer(sessionId: string): Promise<boolean> {
-    const result = await sql<{ is_organizer: number }>`
+    const sql = this.getConnection();
+    const result = await sql<{ is_organizer: number }[]>`
       SELECT is_organizer FROM sessions WHERE id = ${sessionId}
     `;
     
-    return result.rows[0]?.is_organizer === 1;
+    return result[0]?.is_organizer === 1;
   }
 
   static async createOrganizerSession(): Promise<string> {
     await this.ensureTablesExist();
+    const sql = this.getConnection();
     const sessionId = nanoid();
     const now = Date.now();
     
@@ -170,6 +203,7 @@ export class DatabaseService {
     location_address: string | null;
   }): Promise<string> {
     await this.ensureTablesExist();
+    const sql = this.getConnection();
     const incidentId = nanoid();
     const now = Date.now();
 
@@ -216,6 +250,7 @@ export class DatabaseService {
     idempotency_key: string;
   }): Promise<string> {
     await this.ensureTablesExist();
+    const sql = this.getConnection();
     const reportId = nanoid();
     const now = Date.now();
 
@@ -254,39 +289,44 @@ export class DatabaseService {
   }
 
   static async getReportByIdempotencyKey(key: string): Promise<Report | undefined> {
-    const result = await sql<Report>`
+    const sql = this.getConnection();
+    const result = await sql<Report[]>`
       SELECT * FROM reports WHERE idempotency_key = ${key}
     `;
-    return result.rows[0];
+    return result[0];
   }
 
   static async getReport(id: string): Promise<Report | undefined> {
-    const result = await sql<Report>`
+    const sql = this.getConnection();
+    const result = await sql<Report[]>`
       SELECT * FROM reports WHERE id = ${id}
     `;
-    return result.rows[0];
+    return result[0];
   }
 
   static async getIncident(id: string): Promise<Incident | undefined> {
-    const result = await sql<Incident>`
+    const sql = this.getConnection();
+    const result = await sql<Incident[]>`
       SELECT * FROM incidents WHERE id = ${id}
     `;
-    return result.rows[0];
+    return result[0];
   }
 
   static async getAllIncidents(): Promise<Incident[]> {
-    const result = await sql<Incident>`
+    const sql = this.getConnection();
+    const result = await sql<Incident[]>`
       SELECT * FROM incidents ORDER BY created_at DESC
     `;
-    return result.rows;
+    return result;
   }
 
   static async getReportsForIncident(incidentId: string): Promise<Report[]> {
-    const result = await sql<Report>`
+    const sql = this.getConnection();
+    const result = await sql<Report[]>`
       SELECT * FROM reports WHERE incident_id = ${incidentId} AND withdrawn = 0
       ORDER BY created_at ASC
     `;
-    return result.rows;
+    return result;
   }
 
   static async updateIncidentStatus(
@@ -295,20 +335,19 @@ export class DatabaseService {
     actorSession: string,
     actorType: string
   ): Promise<void> {
+    const sql = this.getConnection();
     const incident = await this.getIncident(incidentId);
     if (!incident) throw new Error('Incident not found');
 
     const eventId = nanoid();
     const now = Date.now();
 
-    // Postgres doesn't have transactions in the same way, but we can use BEGIN/COMMIT
-    await sql`BEGIN`;
-    try {
-      await sql`
+    await sql.begin(async (txSql) => {
+      await txSql`
         UPDATE incidents SET status = ${newStatus}, updated_at = ${now} WHERE id = ${incidentId}
       `;
 
-      await sql`
+      await txSql`
         INSERT INTO status_events (
           id, incident_id, old_status, new_status,
           actor_session, actor_type, created_at
@@ -322,11 +361,6 @@ export class DatabaseService {
           ${now}
         )
       `;
-
-      await sql`COMMIT`;
-    } catch (error) {
-      await sql`ROLLBACK`;
-      throw error;
-    }
+    });
   }
 }
