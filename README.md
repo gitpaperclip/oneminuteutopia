@@ -31,6 +31,28 @@ never presented as zero risk.
 - Supabase Storage for report photos.
 - Google Gemini for structured image analysis, called only by the server.
 
+## Baltimore 311 integration (in progress)
+
+The prepared-report contract is **frozen** in `lib/prepared-report-types.ts`.
+This defines the shared interface for:
+
+- Phase 1 image analysis (implemented)
+- Baltimore 311 routing logic (to be implemented by Agent B)
+- Review and submission UI
+
+**Current status:** Photo reporting, AI analysis, and durable receipts are
+working. Baltimore 311 service matching, emergency guardrails, and incident
+clustering are planned for subsequent PRs.
+
+See [docs/priority-0-findings.md](docs/priority-0-findings.md) for the full
+implementation status, test results, and contract documentation.
+
+**Hard constraint:** The app does NOT call live Baltimore 311 APIs. All 311
+integration is prepare-only (packet generation, form preview, link generation).
+Users must manually confirm and submit through the city's portal. Never claim
+"submitted" to any government system — a link opened or form displayed is NOT
+proof of city acceptance.
+
 ## Local setup
 
 Use Node.js 22 or newer. The analysis tests use Node's TypeScript stripping.
