@@ -335,7 +335,6 @@ export default function HomePage() {
             ref={fileRef}
             type="file"
             accept="image/*"
-            capture="environment"
             className="sr-only"
             onChange={(e) => {
               const f = e.target.files?.[0];
