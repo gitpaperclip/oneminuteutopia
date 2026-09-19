@@ -44,27 +44,9 @@ export async function prepareReport(buffer: Buffer, sessionId: string, services 
       finish_reason: failure?.finishReason,
       thoughts_token_count: failure?.thoughtsTokenCount,
       candidates_token_count: failure?.candidatesTokenCount,
+      validation_stage: failure?.validationStage,
       processing_ms: Math.round(performance.now() - started),
     };
-    if (failure?.httpStatus === 400 && failure?.providerErrorBody) {
-      const errorBody = failure.providerErrorBody as Record<string, unknown>;
-      const errorObj = errorBody?.error as Record<string, unknown> | undefined;
-      if (errorObj?.message && typeof errorObj.message === 'string' && errorObj.message.length < 500) {
-        logData.provider_message = errorObj.message;
-      }
-      const details = errorObj?.details;
-      if (Array.isArray(details)) {
-        const fieldPaths = details
-          .map(d => (d as Record<string, unknown>)?.fieldViolations)
-          .filter((fv): fv is Array<{ field?: string }> => Array.isArray(fv))
-          .flat()
-          .map(v => v.field)
-          .filter((f): f is string => typeof f === 'string' && f.length < 100);
-        if (fieldPaths.length > 0) {
-          logData.schema_field_violations = fieldPaths;
-        }
-      }
-    }
     console.warn('image_analysis_unavailable', JSON.stringify(logData));
   }
   return {

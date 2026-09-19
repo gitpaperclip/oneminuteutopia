@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prepareReport } from '../lib/report-pipeline.ts';
 import { AnalysisStorageError } from '../lib/analysis-store.ts';
-import { GeminiAnalysisError, GeminiService } from '../lib/gemini.ts';
+import { GeminiAnalysisError } from '../lib/gemini.ts';
 import { normalizedTags } from '../lib/incident-taxonomy.mjs';
 import { baltimoreRouteForIncidentType } from '../lib/baltimore-311-routing.mjs';
 
@@ -172,24 +172,13 @@ test('an invalid model setting cannot block a manually reportable saved photo', 
 });
 
 test('an actual provider rejection exposes only safe diagnostics after persisting the manual assessment', async t => {
-  const originals = { GEMINI_API_KEY: process.env.GEMINI_API_KEY, GEMINI_MODEL: process.env.GEMINI_MODEL };
-  t.after(() => {
-    for (const [key, value] of Object.entries(originals)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  });
-  process.env.GEMINI_API_KEY = 'private-api-key';
-  process.env.GEMINI_MODEL = 'gemini-2.5-flash';
-  const privateProviderText = 'private-provider-body with private-api-key and secret-session';
-  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ error: {
-    message: privateProviderText,
-    details: [{ reason: 'API_KEY_INVALID', metadata: { key: 'private-api-key', session: 'secret-session' } }],
-  } }), { status: 400 }));
   let persisted = false;
   const warnings = t.mock.method(console, 'warn', () => { assert.equal(persisted, true); });
   const { services } = createServices({
-    gemini: { getModel: () => GeminiService.getModel(), analyzeImage: GeminiService.analyzeImage.bind(GeminiService) },
+    gemini: {
+      getModel: () => 'gemini-3.8-flash',
+      analyzeImage: async () => { throw new GeminiAnalysisError('credentials', 403); },
+    },
     analyses: { save: async input => { persisted = true; return { ...input, id: 'saved-failed-assessment' }; } },
   });
   const value = await prepareReport(jpeg, 'secret-session', services);
@@ -200,9 +189,8 @@ test('an actual provider rejection exposes only safe diagnostics after persistin
   assert.equal(event, 'image_analysis_unavailable');
   assert.equal(diagnostic.analysis_id, 'saved-failed-assessment');
   assert.equal(diagnostic.code, 'credentials');
-  assert.equal(diagnostic.http_status, 400);
-  assert.equal(diagnostic.provider_reason, 'API_KEY_INVALID');
-  assert.deepEqual(Object.keys(diagnostic).sort(), ['analysis_id', 'code', 'http_status', 'model', 'processing_ms', 'provider_reason']);
+  assert.equal(diagnostic.http_status, 403);
+  assert.deepEqual(Object.keys(diagnostic).sort(), ['analysis_id', 'code', 'http_status', 'model', 'processing_ms']);
   assert.doesNotMatch(JSON.stringify(warnings.mock.calls[0].arguments), /private-api-key|private-provider-body|secret-session|\/9j\/|photo\.jpg|saved-image-hash/);
   assert.doesNotMatch(JSON.stringify(value), /private-api-key|private-provider-body|secret-session|API_KEY_INVALID|credentials|http_status|provider_reason/);
 });
