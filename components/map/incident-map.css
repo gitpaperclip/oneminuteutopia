@@ -41,7 +41,7 @@
 }
 
 .map-shell.has-sheet .incident-map .leaflet-bottom.leaflet-right {
-  bottom: min(52dvh, 380px);
+  display: none;
 }
 
 .incident-pin {
