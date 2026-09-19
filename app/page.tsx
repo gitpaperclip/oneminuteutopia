@@ -267,7 +267,7 @@ export default function HomePage() {
     <div className="app-shell">
       {step === 'capture' && (
         <section className="capture-stage" aria-label="Capture">
-          <img src="/logo-mark.png" alt="1MU" className="logo-mark" width={64} height={64} />
+          <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={64} height={64} />
           <div className="camera-bleed">
             {preview ? (
               <img src={preview} alt="" className="camera-video" />
@@ -347,7 +347,7 @@ export default function HomePage() {
 
       {step === 'analysis' && upload && preview && (
         <section className="analysis-stage">
-          <img src="/logo-mark.png" alt="1MU" className="logo-mark" width={64} height={64} />
+          <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={64} height={64} />
           <img src={preview} alt="" className="analysis-photo" />
           {upload.analysis_status === 'unavailable' && (
             <p className="toast-warn">{upload.warning || 'AI unavailable — pick a category next.'}</p>
@@ -368,7 +368,7 @@ export default function HomePage() {
       {step === 'confirm' && upload && (
         <section className="confirm-stage">
           <header className="confirm-header">
-            <img src="/logo-mark.png" alt="1MU" width={32} height={32} />
+            <img src="/logo-mark.png?v=3" alt="1MU" width={32} height={32} />
             <button type="button" className="text-btn" onClick={() => setStep('analysis')}>
               Back
             </button>
