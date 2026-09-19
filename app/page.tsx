@@ -11,6 +11,7 @@ import { prepareReportImage } from '@/lib/image-client';
 import { groupKeyFromReport } from '@/lib/incident-groups';
 
 type Step = 'capture' | 'analysis' | 'confirm';
+type CapturePhase = 'live' | 'reviewing' | 'processing';
 
 interface UploadResult {
   analysis_id: string;
@@ -29,18 +30,48 @@ function stopTracks(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
 }
 
+function DiscardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path
+        d="M6.4 6.4 17.6 17.6M17.6 6.4 6.4 17.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ConfirmIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path
+        d="M5 12.5 10 17.5 19 7.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const pendingFile = useRef<File | null>(null);
   const uploadAbort = useRef<AbortController | null>(null);
   const gen = useRef(0);
 
   const [step, setStep] = useState<Step>('capture');
+  const [capturePhase, setCapturePhase] = useState<CapturePhase>('live');
   const [preview, setPreview] = useState<string | null>(null);
   const [upload, setUpload] = useState<UploadResult | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraDenied, setCameraDenied] = useState(false);
@@ -53,11 +84,21 @@ export default function HomePage() {
   const [locBusy, setLocBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  const reviewing = capturePhase === 'reviewing';
+  const processing = capturePhase === 'processing';
+
   const killCamera = useCallback(() => {
     stopTracks(streamRef.current);
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraOn(false);
+  }, []);
+
+  const replacePreview = useCallback((url: string | null) => {
+    setPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
   }, []);
 
   useEffect(
@@ -77,12 +118,10 @@ export default function HomePage() {
   );
 
   const startCamera = useCallback(async () => {
-    setError(null);
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
       setCameraDenied(true);
       return;
     }
-    killCamera();
     try {
       let stream: MediaStream;
       try {
@@ -97,46 +136,72 @@ export default function HomePage() {
       } catch {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
+      stopTracks(streamRef.current);
       streamRef.current = stream;
+      setError(null);
       setCameraDenied(false);
       setCameraOn(true);
     } catch {
-      killCamera();
+      stopTracks(streamRef.current);
+      streamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
+      setCameraOn(false);
       setCameraDenied(true);
     }
-  }, [killCamera]);
+  }, []);
+
+  const shouldStartCamera =
+    step === 'capture' && capturePhase === 'live' && !cameraOn && !preview && !cameraDenied;
 
   useEffect(() => {
-    if (step === 'capture' && !cameraOn && !busy && !preview && !cameraDenied) {
-      void startCamera();
-    }
-  }, [step, cameraOn, busy, preview, cameraDenied, startCamera]);
+    if (!shouldStartCamera) return;
+    // Auto-start rear camera on the capture screen (getUserMedia is an external system).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setState runs after getUserMedia
+    void startCamera();
+  }, [shouldStartCamera, startCamera]);
 
   useEffect(() => {
-    if (!cameraOn || preview || step !== 'capture') return;
+    if (!cameraOn || step !== 'capture') return;
     const video = videoRef.current;
     const stream = streamRef.current;
     if (!video || !stream) return;
     if (video.srcObject !== stream) video.srcObject = stream;
-    void video.play().catch(() => undefined);
+    if (!preview) void video.play().catch(() => undefined);
   }, [cameraOn, preview, step]);
 
+  const beginReview = useCallback(
+    (file: File) => {
+      pendingFile.current = file;
+      replacePreview(URL.createObjectURL(file));
+      setCapturePhase('reviewing');
+      setError(null);
+      videoRef.current?.pause();
+    },
+    [replacePreview],
+  );
+
+  const discardReview = useCallback(() => {
+    if (capturePhase === 'processing') return;
+    pendingFile.current = null;
+    replacePreview(null);
+    setCapturePhase('live');
+    setError(null);
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (video && stream) {
+      if (video.srcObject !== stream) video.srcObject = stream;
+      void video.play().catch(() => undefined);
+    }
+  }, [capturePhase, replacePreview]);
 
   const runUpload = async (file: File) => {
     const id = ++gen.current;
     uploadAbort.current?.abort();
-    killCamera();
-    setBusy(true);
     setError(null);
     setUpload(null);
     try {
       const prepared = await prepareReportImage(file);
       if (id !== gen.current) return;
-      const url = URL.createObjectURL(prepared);
-      setPreview((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return url;
-      });
       const controller = new AbortController();
       uploadAbort.current = controller;
       const form = new FormData();
@@ -150,25 +215,34 @@ export default function HomePage() {
         throw new Error('Incomplete analysis. Try again.');
       }
       if (id !== gen.current) return;
+      killCamera();
       setUpload(data as UploadResult);
       setCategory(data.analysis.category as string);
+      setCapturePhase('live');
       setStep('analysis');
     } catch (cause) {
       if (id !== gen.current) return;
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
       setError(cause instanceof Error ? cause.message : 'Could not process photo.');
+      setCapturePhase('reviewing');
       setStep('capture');
     } finally {
       if (id === gen.current) {
-        setBusy(false);
         uploadAbort.current = null;
       }
     }
   };
 
+  const confirmReview = async () => {
+    const file = pendingFile.current;
+    if (!file || capturePhase !== 'reviewing') return;
+    setCapturePhase('processing');
+    await runUpload(file);
+  };
+
   const shutter = async () => {
     const video = videoRef.current;
-    if (!video?.videoWidth || busy) return;
+    if (!video?.videoWidth || capturePhase !== 'live') return;
     const canvas = document.createElement('canvas');
     const scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
     canvas.width = Math.round(video.videoWidth * scale);
@@ -184,10 +258,10 @@ export default function HomePage() {
       setError('Capture failed. Upload instead.');
       return;
     }
-    await runUpload(new File([blob], 'capture.jpg', { type: 'image/jpeg' }));
+    beginReview(new File([blob], 'capture.jpg', { type: 'image/jpeg' }));
   };
 
-  const useGps = () => {
+  const requestGps = () => {
     if (!navigator.geolocation) {
       setLocMode('manual');
       setError('GPS unavailable — enter a short address.');
@@ -243,9 +317,9 @@ export default function HomePage() {
         }),
       });
       const data = await res.json().catch(() => {
-        throw new Error('Submit failed.');
+        throw new Error('Could not save report.');
       });
-      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Submit failed.');
+      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Could not save report.');
       if (typeof data.report_id !== 'string') throw new Error('No report id returned.');
       if (data.incident_id) {
         void groupKeyFromReport({
@@ -258,7 +332,7 @@ export default function HomePage() {
       }
       router.push(`/receipt/${encodeURIComponent(data.report_id)}?cat=${encodeURIComponent(category)}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Submit failed.');
+      setError(cause instanceof Error ? cause.message : 'Could not save report.');
       setSubmitting(false);
     }
   };
@@ -267,19 +341,23 @@ export default function HomePage() {
     <div className="app-shell">
       {step === 'capture' && (
         <section className="capture-stage" aria-label="Capture">
-          <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={64} height={64} />
+          <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
           <div className="camera-bleed">
-            {preview ? (
-              <img src={preview} alt="" className="camera-video" />
-            ) : (
-              <video ref={videoRef} className="camera-video" autoPlay playsInline muted />
-            )}
-            {busy && (
-              <div className="busy-overlay" role="status">
+            <video
+              ref={videoRef}
+              className={preview ? 'camera-video is-hidden' : 'camera-video'}
+              autoPlay
+              playsInline
+              muted
+              disablePictureInPicture
+            />
+            {preview ? <img src={preview} alt="" className="camera-still" /> : null}
+            {processing && (
+              <div className="busy-overlay" role="status" aria-live="polite" aria-label="Working">
                 <span className="spinner" />
               </div>
             )}
-            {cameraDenied && !preview && !busy && (
+            {cameraDenied && capturePhase === 'live' && !preview && (
               <div
                 className="analysis-popup"
                 role="dialog"
@@ -290,7 +368,7 @@ export default function HomePage() {
                 <div className="analysis-card">
                   <p className="analysis-kicker">Camera</p>
                   <h2 id="camera-denied-title" className="analysis-category">
-                    Allow camera access to submit a report
+                    Allow camera access to take a photo
                   </h2>
                   <button
                     type="button"
@@ -318,19 +396,49 @@ export default function HomePage() {
               {error}
             </p>
           )}
-          <div className="capture-bar">
-            <button type="button" className="btn-ghost" disabled={busy} onClick={() => fileRef.current?.click()}>
-              Upload
-            </button>
-            <button
-              type="button"
-              className="shutter"
-              aria-label="Take photo"
-              disabled={busy || !cameraOn}
-              onClick={() => void shutter()}
-            />
-            <span aria-hidden="true" className="capture-bar-spacer" />
-          </div>
+          {!(cameraDenied && capturePhase === 'live' && !preview) && (
+            <div className={`capture-bar ${capturePhase !== 'live' ? 'is-reviewing' : ''}`}>
+              <button
+                type="button"
+                className="btn-ghost"
+                disabled={capturePhase !== 'live'}
+                onClick={() => fileRef.current?.click()}
+              >
+                Upload
+              </button>
+              <div className={`shutter-cluster is-${capturePhase}`}>
+                <button
+                  type="button"
+                  className="review-btn review-discard"
+                  aria-label="Discard photo"
+                  disabled={!reviewing}
+                  tabIndex={reviewing ? 0 : -1}
+                  onClick={discardReview}
+                >
+                  <DiscardIcon />
+                </button>
+                <button
+                  type="button"
+                  className="shutter"
+                  aria-label="Take photo"
+                  disabled={capturePhase !== 'live' || !cameraOn}
+                  tabIndex={capturePhase === 'live' ? 0 : -1}
+                  onClick={() => void shutter()}
+                />
+                <button
+                  type="button"
+                  className="review-btn review-confirm"
+                  aria-label="Use photo"
+                  disabled={!reviewing}
+                  tabIndex={reviewing ? 0 : -1}
+                  onClick={() => void confirmReview()}
+                >
+                  <ConfirmIcon />
+                </button>
+              </div>
+              <span aria-hidden="true" className="capture-bar-spacer" />
+            </div>
+          )}
           <input
             ref={fileRef}
             type="file"
@@ -339,7 +447,7 @@ export default function HomePage() {
             onChange={(e) => {
               const f = e.target.files?.[0];
               e.currentTarget.value = '';
-              if (f) void runUpload(f);
+              if (f && capturePhase === 'live') beginReview(f);
             }}
           />
         </section>
@@ -347,19 +455,18 @@ export default function HomePage() {
 
       {step === 'analysis' && upload && preview && (
         <section className="analysis-stage">
-          <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={64} height={64} />
+          <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
           <img src={preview} alt="" className="analysis-photo" />
           {upload.analysis_status === 'unavailable' && (
-            <p className="toast-warn">{upload.warning || 'AI unavailable — pick a category next.'}</p>
+            <p className="toast-warn">{upload.warning || 'Assessment unavailable — pick a category next.'}</p>
           )}
           <AnalysisCard
             category={upload.analysis.category}
             seriousness={upload.analysis.seriousness}
-            ai_confidence={upload.analysis.ai_confidence}
             onContinue={() => {
               setError(null);
               setStep('confirm');
-              useGps();
+              requestGps();
             }}
           />
         </section>
@@ -375,7 +482,7 @@ export default function HomePage() {
           </header>
           {preview && <img src={preview} alt="" className="confirm-thumb" />}
           {error && (
-            <p className="toast-error" role="alert">
+            <p className="toast-error toast-error-inline" role="alert">
               {error}
             </p>
           )}
@@ -397,7 +504,7 @@ export default function HomePage() {
                 <button type="button" className="text-btn" onClick={() => setLocMode('manual')}>
                   Address
                 </button>
-                <button type="button" className="text-btn" disabled={locBusy} onClick={useGps}>
+                <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
                   {locBusy ? '…' : 'Refresh'}
                 </button>
               </div>
@@ -410,7 +517,7 @@ export default function HomePage() {
                   maxLength={200}
                   autoComplete="street-address"
                 />
-                <button type="button" className="text-btn" disabled={locBusy} onClick={useGps}>
+                <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
                   {locBusy ? '…' : 'GPS'}
                 </button>
               </div>
@@ -431,7 +538,7 @@ export default function HomePage() {
             disabled={!canSubmit || submitting || locBusy}
             onClick={() => void submit()}
           >
-            {submitting ? 'Submitting…' : 'Submit'}
+            {submitting ? 'Saving…' : 'Save report'}
           </button>
         </section>
       )}

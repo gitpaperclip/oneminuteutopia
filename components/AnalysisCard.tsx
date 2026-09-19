@@ -1,24 +1,24 @@
 'use client';
 
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
+import { isEmergencyHandoff, likelyDepartmentName } from '@/lib/baltimore-routes';
 import { formatSeverity, severityStyle } from '@/lib/severity';
 
 export interface AnalysisCardProps {
   category: string;
   seriousness: number | null;
-  ai_confidence: number;
   onContinue: () => void;
 }
 
 export function AnalysisCard({
   category,
   seriousness,
-  ai_confidence,
   onContinue,
 }: AnalysisCardProps) {
   const style = severityStyle(seriousness);
   const label = CATEGORY_LABELS[category] ?? category.replaceAll('_', ' ');
-  const confidencePct = Math.round(Math.min(1, Math.max(0, ai_confidence)) * 100);
+  const emergency = isEmergencyHandoff(category, seriousness);
+  const likely = likelyDepartmentName(category);
 
   return (
     <div
@@ -29,7 +29,7 @@ export function AnalysisCard({
       style={{ ['--sev-accent' as string]: style.accent, ['--sev-fill' as string]: style.fill }}
     >
       <div className="analysis-card">
-        <p className="analysis-kicker">AI look</p>
+        <p className="analysis-kicker">Assessment</p>
         <h2 id="analysis-title" className="analysis-category">{label}</h2>
         <div className="analysis-score-row">
           <div className="analysis-score" aria-label={`Severity ${formatSeverity(seriousness)}`}>
@@ -40,10 +40,20 @@ export function AnalysisCard({
           </div>
           <div className="analysis-meta">
             <span className="analysis-tone">{style.label}</span>
-            <span className="analysis-conf">{confidencePct}% conf.</span>
+            {!emergency && likely ? (
+              <span className="analysis-likely">Likely: {likely}</span>
+            ) : null}
           </div>
         </div>
-        <button type="button" className="btn btn-primary" onClick={onContinue}>
+        {emergency ? (
+          <div className="analysis-emergency">
+            <a className="btn btn-emergency btn-block" href="tel:911">
+              Contact 911
+            </a>
+            <p className="analysis-911-note">Call now if anyone is in danger.</p>
+          </div>
+        ) : null}
+        <button type="button" className="btn btn-primary btn-block" onClick={onContinue}>
           Continue
         </button>
       </div>

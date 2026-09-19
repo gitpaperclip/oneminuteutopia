@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { DatabaseService } from '../lib/db.ts';
-import { BaltimoreRoutingService } from '../lib/baltimore-routing.ts';
+import { BaltimoreRoutingService, toIntegrationPayload } from '../lib/baltimore-routing.ts';
 
 const migrations = await Promise.all([
   '202609190000_reporting.sql',
@@ -131,6 +131,14 @@ test('prepareReport uses stored routing fields for 311 disposition', async t => 
   assert.equal(prepared.prepared_fields.latitude, 39.2904);
   assert.equal(prepared.prepared_fields.longitude, -76.6122);
   assert.equal(prepared.prepared_fields.seriousness, 5);
+
+  const payload = toIntegrationPayload(prepared);
+  assert.equal(payload.report_id, prepared.report_id);
+  assert.equal(payload.readiness, 'choose_service');
+  assert.equal(payload.service_options?.[0].service_code, 'TRM-Potholes');
+  assert.equal('disclaimer' in payload, false);
+  assert.equal('user_action' in payload, false);
+  assert.equal('intake_url' in payload, false);
 });
 
 test('emergency disposition requires 911 first', async t => {
