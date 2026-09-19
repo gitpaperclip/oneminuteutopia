@@ -2,11 +2,12 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { MockStatus, WorkerIncident, WorkerReport } from './types.ts';
 
 export function createWorkerClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const key =
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL)?.trim();
+  const key = (
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_KEY;
+    process.env.SUPABASE_KEY
+  )?.trim();
 
   if (!url) {
     throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL. Set it in .env.local.');
