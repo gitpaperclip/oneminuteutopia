@@ -1,9 +1,12 @@
 import 'server-only';
 
+import { VertexAI } from '@google-cloud/vertexai';
 import { PROMPT, GEMINI_SCHEMA, parseGemini, imageMime, MAX_IMAGE_BYTES } from './hazard-analysis.mjs';
 
 export const ANALYSIS_TIMEOUT_MS = 18_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_PROJECT = 'project-0e7457ec-0481-4abd-b67';
+const DEFAULT_LOCATION = 'us-central1';
 
 type FailureCode = 'configuration' | 'credentials' | 'invalid_request' | 'rate_limited'
   | 'model_unavailable' | 'provider_unavailable' | 'timeout' | 'network_error'
@@ -52,6 +55,28 @@ function record(value: unknown): Record<string, unknown> {
     ? value as Record<string, unknown> : {};
 }
 
+function getVertexConfig(): { project: string; location: string; credentials?: object } {
+  const project = process.env.GOOGLE_CLOUD_PROJECT?.trim() || DEFAULT_PROJECT;
+  const location = process.env.GOOGLE_CLOUD_LOCATION?.trim() || DEFAULT_LOCATION;
+  
+  const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON?.trim();
+  if (serviceAccountJson) {
+    try {
+      const credentials = JSON.parse(serviceAccountJson);
+      return { project, location, credentials };
+    } catch {
+      throw new GeminiAnalysisError('configuration');
+    }
+  }
+  
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+  if (credentialsPath) {
+    return { project, location };
+  }
+  
+  throw new GeminiAnalysisError('configuration');
+}
+
 async function requestFailure(response: Response): Promise<GeminiAnalysisError> {
   const body = await response.json().catch(() => null);
   const errorObj = record(body).error;
@@ -92,55 +117,61 @@ export class GeminiService {
   }
 
   static async analyzeImage(imageBuffer: Buffer, mimeType: string): Promise<AnalysisResult> {
-    const key = process.env.GEMINI_API_KEY?.trim();
-    if (!key) throw new GeminiAnalysisError('configuration');
     if (imageBuffer.length > MAX_IMAGE_BYTES || imageBuffer.length === 0) throw new Error('Image size is invalid');
     // The upload route decodes and normalizes the image before calling this service.
     if (imageMime(imageBuffer) !== mimeType) {
       throw new Error('Image content does not match its file type');
     }
+    
+    const config = getVertexConfig();
     const model = this.getModel();
     const signal = AbortSignal.timeout(ANALYSIS_TIMEOUT_MS);
+    
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-          signal,
-          cache: 'no-store',
-          redirect: 'error',
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: PROMPT }] },
-            contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageBuffer.toString('base64') } }] }],
-            generationConfig: {
-              // Gemini 3.x rejects candidateCount; earlier models require it.
-              ...(model.startsWith('gemini-3.') ? {} : { candidateCount: 1 }),
-              // Gemini 3.8 Flash thinking (even on 'low') plus JSON output requires more headroom.
-              // For models without thinking or with thinking disabled, 8192 is safely above need.
-              maxOutputTokens: 8192,
-              // Flash 2.5 otherwise spends a variable budget thinking before a small classification.
-              ...(['gemini-2.5-flash', 'gemini-2.5-flash-lite'].includes(model)
-                ? { thinkingConfig: { thinkingBudget: 0 } }
-                : {}),
-              ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
-                ? { thinkingConfig: { thinkingLevel: 'minimal' } }
-                : {}),
-              // Gemini 3.8 Flash enables thinking by default; 'low' provides fast inference with thinking headroom.
-              ...(model.startsWith('gemini-3.8-flash')
-                ? { thinkingConfig: { thinkingLevel: 'low' } }
-                : {}),
-              // Use the established generateContent JSON Schema fields.
-              responseMimeType: 'application/json',
-              responseJsonSchema: GEMINI_SCHEMA,
-            },
-          }),
-        },
-      );
-      if (!response.ok) throw await requestFailure(response);
-      const data: unknown = await response.json().catch(() => {
-        throw new GeminiAnalysisError('invalid_response');
+      const vertexAI = new VertexAI({
+        project: config.project,
+        location: config.location,
+        googleAuthOptions: config.credentials ? { credentials: config.credentials } : undefined,
       });
+      
+      const generativeModel = vertexAI.getGenerativeModel({
+        model,
+        systemInstruction: { role: 'system', parts: [{ text: PROMPT }] },
+        generationConfig: {
+          // Gemini 3.x rejects candidateCount; earlier models require it.
+          ...(model.startsWith('gemini-3.') ? {} : { candidateCount: 1 }),
+          // Gemini 3.8 Flash thinking (even on 'low') plus JSON output requires more headroom.
+          // For models without thinking or with thinking disabled, 8192 is safely above need.
+          maxOutputTokens: 8192,
+          // Flash 2.5 otherwise spends a variable budget thinking before a small classification.
+          ...(['gemini-2.5-flash', 'gemini-2.5-flash-lite'].includes(model)
+            ? { thinkingConfig: { thinkingBudget: 0 } }
+            : {}),
+          ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
+            ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } }
+            : {}),
+          // Gemini 3.8 Flash enables thinking by default; 'low' provides fast inference with thinking headroom.
+          ...(model.startsWith('gemini-3.8-flash')
+            ? { thinkingConfig: { thinkingLevel: 'low' } }
+            : {}),
+          // Use the established generateContent JSON Schema fields.
+          responseMimeType: 'application/json',
+          responseSchema: GEMINI_SCHEMA as any,
+        },
+      });
+      
+      const request = {
+        contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageBuffer.toString('base64') } }] }],
+      };
+      
+      const responsePromise = generativeModel.generateContent(request);
+      const timeoutPromise = new Promise((_, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+      
+      const response = await Promise.race([responsePromise, timeoutPromise]) as any;
+      
+      const data: unknown = response.response;
       const candidates = record(data).candidates;
       const finishReason = Array.isArray(candidates) ? record(candidates[0]).finishReason : undefined;
       const usage = record(data).usageMetadata;
@@ -148,11 +179,13 @@ export class GeminiService {
       const thoughtsTokenCount = typeof thoughtsToken === 'number' ? thoughtsToken : undefined;
       const candidatesToken = record(usage).candidatesTokenCount;
       const candidatesTokenCount = typeof candidatesToken === 'number' ? candidatesToken : undefined;
+      
       if (record(record(data).promptFeedback).blockReason ||
         ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY', 'IMAGE_PROHIBITED_CONTENT'].includes(String(finishReason))) {
         throw new GeminiAnalysisError('blocked_response', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount);
       }
       if (finishReason === 'MAX_TOKENS') throw new GeminiAnalysisError('output_truncated', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount);
+      
       try {
         return parseGemini(data) as AnalysisResult;
       } catch {
@@ -162,6 +195,17 @@ export class GeminiService {
       // The same deadline covers both the request and reading its response body.
       if (signal.aborted) throw new GeminiAnalysisError('timeout');
       if (error instanceof GeminiAnalysisError) throw error;
+      
+      // Map Vertex AI errors to our error codes
+      const errorMessage = String(error);
+      if (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('credential')) {
+        throw new GeminiAnalysisError('credentials');
+      }
+      if (errorMessage.includes('429')) throw new GeminiAnalysisError('rate_limited');
+      if (errorMessage.includes('404')) throw new GeminiAnalysisError('model_unavailable');
+      if (errorMessage.includes('503') || /5\d{2}/.test(errorMessage)) throw new GeminiAnalysisError('provider_unavailable');
+      if (errorMessage.includes('400')) throw new GeminiAnalysisError('invalid_request');
+      
       throw new GeminiAnalysisError('network_error');
     }
   }
