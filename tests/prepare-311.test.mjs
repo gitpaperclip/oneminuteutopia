@@ -121,7 +121,11 @@ test('prepareReport uses stored routing fields for 311 disposition', async t => 
   assert.equal(prepared.prepared_fields.category, 'roads_and_sidewalks');
   assert.equal(prepared.prepared_fields.category_label, 'Roads and sidewalks');
   assert.equal(prepared.prepared_fields.incident_type, 'pothole');
-  assert.equal(prepared.prepared_fields.description, 'Test hazard description');
+  // Description now uses build311Description - verify it includes key components
+  assert.ok(prepared.prepared_fields.description.includes('Issue: Pothole'));
+  assert.ok(prepared.prepared_fields.description.includes('Test context'));
+  assert.ok(prepared.prepared_fields.description.includes('Reporter notes:'));
+  assert.ok(prepared.prepared_fields.description.includes('Test hazard description'));
   assert.equal(prepared.prepared_fields.location, '100 Holliday St, Baltimore, MD 21202');
   assert.equal(prepared.prepared_fields.latitude, 39.2904);
   assert.equal(prepared.prepared_fields.longitude, -76.6122);
