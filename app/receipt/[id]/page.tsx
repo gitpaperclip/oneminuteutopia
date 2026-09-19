@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { PreparedPacketPanel } from '@/components/PreparedPacketPanel';
+import { DemoStepRail } from '@/components/DemoStepRail';
 import { notFound } from 'next/navigation';
 import { DatabaseService } from '@/lib/db';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
@@ -26,15 +28,29 @@ export default async function ReceiptPage({
     <div className="receipt-shell">
       <header className="receipt-header">
         <img src="/logo-mark.png" alt="1MU" width={36} height={36} />
-        <h1>Report saved</h1>
+        <h1>Packet ready to review</h1>
       </header>
 
       <p className="receipt-id" aria-label="Report id">{report.id}</p>
       <p className="receipt-cat">{label}</p>
 
+      <DemoStepRail active="cluster" />
+
+      <PreparedPacketPanel reportId={report.id} />
+
+      <section className="cluster-panel" aria-label="Clustered incident">
+        <h2>Clustered incident</h2>
+        <p className="receipt-note">
+          Nearby same-type reports become one stronger incident. Evidence count appears when
+          backend fields land — prepare-only, never city-submitted.
+        </p>
+        <p className="packet-badge">Evidence / cluster: pending fields</p>
+      </section>
+
+
       <section className="receipt-section" aria-label="Suggested next steps">
         <h2>Suggested next steps</h2>
-        <p className="receipt-note">Confirm yourself — we do not send this for you.</p>
+        <p className="receipt-note">Prepare-only handoff — we do not submit to Baltimore 311 for you.</p>
         <ul className="handoff-list">
           {links.map((link) => (
             <li key={link.id}>

@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnalysisCard } from '@/components/AnalysisCard';
+import { DemoStepRail } from '@/components/DemoStepRail';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import { CATEGORY_OPTIONS } from '@/lib/baltimore-routes';
 import { prepareReportImage } from '@/lib/image-client';
@@ -265,6 +266,9 @@ export default function HomePage() {
 
   return (
     <div className="app-shell">
+      <DemoStepRail
+        active={step === 'capture' ? 'photo' : step === 'analysis' ? 'identify' : 'packet'}
+      />
       {step === 'capture' && (
         <section className="capture-stage" aria-label="Capture">
           <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={64} height={64} />
@@ -313,6 +317,7 @@ export default function HomePage() {
               </div>
             )}
           </div>
+
           {error && (
             <p className="toast-error" role="alert">
               {error}
@@ -431,8 +436,9 @@ export default function HomePage() {
             disabled={!canSubmit || submitting || locBusy}
             onClick={() => void submit()}
           >
-            {submitting ? 'Submitting…' : 'Submit'}
+            {submitting ? 'Preparing packet…' : 'Prepare 311 packet'}
           </button>
+          <p className="prepare-disclaimer">Prepares a Baltimore 311 packet. Does not submit to the city.</p>
         </section>
       )}
     </div>

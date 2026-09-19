@@ -29,7 +29,7 @@ export function AnalysisCard({
       style={{ ['--sev-accent' as string]: style.accent, ['--sev-fill' as string]: style.fill }}
     >
       <div className="analysis-card">
-        <p className="analysis-kicker">AI look</p>
+        <p className="analysis-kicker">AI identified</p>
         <h2 id="analysis-title" className="analysis-category">{label}</h2>
         <div className="analysis-score-row">
           <div className="analysis-score" aria-label={`Severity ${formatSeverity(seriousness)}`}>
@@ -44,7 +44,7 @@ export function AnalysisCard({
           </div>
         </div>
         <button type="button" className="btn btn-primary" onClick={onContinue}>
-          Continue
+          Review packet
         </button>
       </div>
     </div>
