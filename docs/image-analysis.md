@@ -161,7 +161,8 @@ refer to the same initial assessment. An unavailable analysis produces null
 confidence on the report, keeping missing AI output distinct from a model score.
 
 The app does not calculate overall danger, aggregate report frequency into a
-risk score, route reports to authorities, or send notifications.
+risk score, or send notifications. A local Playwright worker may file clustered
+incidents to a mock government demo site only; it does not contact Baltimore 311.
 
 ## Trust boundaries and limits
 

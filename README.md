@@ -18,7 +18,13 @@ will act on a report.
 4. Review the saved assessment and correct the category if needed. Confirm GPS
    location or enter an address or landmark; add optional details.
 5. Submit. The server loads the session-owned assessment and saves the report
-   atomically. The receipt appears only after persistence succeeds.
+   atomically. Nearby same-type reports within 150 meters and 72 hours join one
+   incident. The receipt appears only after persistence succeeds.
+
+A separate local worker (`npm run worker`) polls `public.incidents`. When an
+incident has two or more reports, it files that cluster to a **mock** government
+website with Playwright and stores the confirmation on the incident. It does
+not call Baltimore 311.
 
 If Gemini is unavailable, the photo and an explicitly unavailable assessment are
 saved so that manual reporting remains usable. An unavailable assessment is
@@ -51,7 +57,8 @@ implementation status, test results, and contract documentation.
 integration is prepare-only (packet generation, form preview, link generation).
 Users must manually confirm and submit through the city's portal. Never claim
 "submitted" to any government system — a link opened or form displayed is NOT
-proof of city acceptance.
+proof of city acceptance. The Playwright worker files only to the mock
+government demo site.
 
 ## Local setup
 
@@ -83,9 +90,10 @@ Never put service or Gemini keys in `NEXT_PUBLIC_*` variables or commit
 1. Review and apply the migrations in filename order using the Supabase SQL
    editor or your normal migration workflow:
    `supabase/migrations/202609190000_reporting.sql`, then
-   `supabase/migrations/202609190001_image_analyses.sql`. They contain the base
-   reporting schema and analysis table, with row-level security and server access.
-   Tables are **not** created by API requests.
+   `supabase/migrations/202609190001_image_analyses.sql`, then the later
+   clustering, routing, and mock-submission migrations in filename order.
+   They contain the base reporting schema and analysis table, with row-level
+   security and server access. Tables are **not** created by API requests.
 2. Create a Supabase Storage bucket named `report-photos` and enable public read
    access. Uploads use the server credential. Photo URLs can be opened by anyone
    who has the URL; use consented public-space images for the demo.
@@ -100,6 +108,17 @@ reapplication.
 ```sh
 npm run dev
 ```
+
+In a second terminal, after Chromium is installed for Playwright:
+
+```sh
+npx playwright install chromium
+npm run worker
+```
+
+The worker reads the same `.env.local` as the app and polls `public.incidents`
+every 10 seconds. A visible browser opens only for clustered, non-emergency
+incidents that have not already been filed. Playwright will not run on Vercel.
 
 Open `http://localhost:3000`. On a physical phone, use an HTTPS deployment or
 an HTTPS development tunnel; camera and location permissions require a secure
@@ -157,6 +176,7 @@ app/receipt/[id]/page.tsx          Durable report receipt
 app/api/upload/route.ts           Validate, normalize, store, analyze, and save
 app/api/submit/route.ts           Authoritative report submission
 app/api/health/route.ts           Configuration and database health
+worker/src/index.ts              Poll incidents and file the mock government form
 lib/gemini.ts                    Server-side Gemini request
 lib/hazard-analysis.mjs          Prompt, schema, and validation
 lib/analysis-store.ts            Saved analysis persistence
@@ -182,6 +202,10 @@ definitions, trust boundaries, and operational limits.
   password, and inspect server logs. Do not share credentials in screenshots.
 - **Camera or location is denied:** use file upload and enter the location
   manually. Confirm the phone is using HTTPS before testing permissions again.
+- **Worker never opens a browser:** apply
+  `202609190004_mock_government_submission.sql`, confirm two nearby same-type
+  reports clustered (`evidence_count >= 2`), and run `npx playwright install chromium`.
+  Emergencies and already-filed incidents are skipped on purpose.
 
 ## License
 

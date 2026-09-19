@@ -65,6 +65,10 @@ export interface Incident {
   cluster_radius_m: number;
   created_at: number;
   updated_at: number;
+  mock_reference_id: string | null;
+  mock_submitted_at: number | null;
+  mock_status: 'pending' | 'submitted' | 'failed';
+  mock_error: string | null;
 }
 
 export const INCIDENT_CLUSTER_RADIUS_METERS = 150;
@@ -110,7 +114,7 @@ export class DatabaseService {
       FROM public.reports r FULL JOIN public.image_analyses a ON a.report_id = r.id LIMIT 1`;
     await sql`SELECT id FROM public.sessions LIMIT 1`;
     await sql`SELECT key FROM public.request_limits LIMIT 1`;
-    await sql`SELECT incident_type, evidence_count, tags FROM public.incidents LIMIT 1`;
+    await sql`SELECT incident_type, evidence_count, tags, mock_status, mock_reference_id FROM public.incidents LIMIT 1`;
   }
 
   static async createSession(): Promise<string> {
