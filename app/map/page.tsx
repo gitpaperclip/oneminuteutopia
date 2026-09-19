@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
-import { MapShell } from '@/components/MapShell';
+import { MapShell } from '@/components/map/MapShell';
 
 export const metadata: Metadata = {
   title: 'Incident map · 1MU',

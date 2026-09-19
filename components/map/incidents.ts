@@ -1,35 +1,14 @@
-export interface IncidentFilters {
+import type { IncidentBbox, MapIncident, MapIncidentsResponse } from '@/lib/map-incident-types';
+
+export interface MapListFilters {
   category?: string;
   incident_type?: string;
-  tag?: string;
   common_only?: boolean;
   limit?: number;
+  bbox?: IncidentBbox;
 }
 
-export interface PublicIncident {
-  id: string;
-  category: string;
-  incident_type: string | null;
-  short_label: string;
-  latitude: number | null;
-  longitude: number | null;
-  location_address: string | null;
-  status: string;
-  severity: string;
-  credibility_score: number;
-  evidence_count: number;
-  highest_seriousness: number | null;
-  average_ai_confidence: number | null;
-  tags: string[];
-  baltimore_service_candidates: string[];
-  routing_disposition: string;
-  created_at: number;
-  updated_at: number;
-  last_reported_at: number | null;
-  is_super_report: boolean;
-}
-
-export type MappableIncident = PublicIncident & { latitude: number; longitude: number };
+export type MappableIncident = MapIncident & { latitude: number; longitude: number };
 
 export function slugLabel(value: string | null | undefined): string {
   if (!value) return 'Unspecified';
@@ -42,37 +21,70 @@ export function formatConfidence(value: number | null | undefined): string {
   return `${Math.round(pct)}%`;
 }
 
-export function isEmergencyIncident(incident: Pick<PublicIncident, 'routing_disposition'>): boolean {
+export function isEmergencyIncident(incident: Pick<MapIncident, 'routing_disposition'>): boolean {
   return incident.routing_disposition === 'emergency';
 }
 
-export function parseIncidentFilters(searchParams: URLSearchParams): IncidentFilters {
+export function parseMapFilters(searchParams: URLSearchParams): MapListFilters {
   const limitValue = searchParams.get('limit');
   const limit = limitValue === null ? 50 : Number(limitValue);
   return {
     category: searchParams.get('category') || undefined,
     incident_type: searchParams.get('incident_type') || undefined,
-    tag: searchParams.get('tag') || undefined,
     common_only: searchParams.get('common_only') === 'true',
     limit: Number.isInteger(limit) && limit >= 1 && limit <= 100 ? limit : 50,
   };
 }
 
-export function incidentsQuery(filters: IncidentFilters): string {
+export function incidentsQuery(filters: MapListFilters): string {
   const query = new URLSearchParams();
   if (filters.category) query.set('category', filters.category);
   if (filters.incident_type) query.set('incident_type', filters.incident_type);
-  if (filters.tag) query.set('tag', filters.tag);
   if (filters.common_only) query.set('common_only', 'true');
   query.set('limit', String(filters.limit ?? 50));
+  if (filters.bbox) {
+    query.set('min_lat', String(filters.bbox.minLat));
+    query.set('max_lat', String(filters.bbox.maxLat));
+    query.set('min_lon', String(filters.bbox.minLon));
+    query.set('max_lon', String(filters.bbox.maxLon));
+  }
   return query.toString();
 }
 
-export function incidentsPath(filters: IncidentFilters): string {
+export function urlFiltersQuery(filters: MapListFilters): string {
+  return incidentsQuery({
+    category: filters.category,
+    incident_type: filters.incident_type,
+    common_only: filters.common_only,
+    limit: filters.limit,
+  });
+}
+
+export function incidentsPath(filters: MapListFilters): string {
   return `/api/incidents?${incidentsQuery(filters)}`;
 }
 
-export function mappableIncidents(incidents: PublicIncident[]): MappableIncident[] {
+export function roundBbox(bbox: IncidentBbox): IncidentBbox {
+  const round = (value: number) => Math.round(value * 10_000) / 10_000;
+  return {
+    minLat: round(bbox.minLat),
+    maxLat: round(bbox.maxLat),
+    minLon: round(bbox.minLon),
+    maxLon: round(bbox.maxLon),
+  };
+}
+
+export function sameBbox(a: IncidentBbox | undefined, b: IncidentBbox): boolean {
+  return (
+    a != null &&
+    a.minLat === b.minLat &&
+    a.maxLat === b.maxLat &&
+    a.minLon === b.minLon &&
+    a.maxLon === b.maxLon
+  );
+}
+
+export function mappableIncidents(incidents: MapIncident[]): MappableIncident[] {
   return incidents.flatMap((incident) => {
     const latitude = Number(incident.latitude);
     const longitude = Number(incident.longitude);
@@ -81,10 +93,10 @@ export function mappableIncidents(incidents: PublicIncident[]): MappableIncident
   });
 }
 
-export async function fetchIncidents(
-  filters: IncidentFilters,
+export async function fetchMapIncidents(
+  filters: MapListFilters,
   signal?: AbortSignal,
-): Promise<PublicIncident[]> {
+): Promise<MapIncident[]> {
   const response = await fetch(incidentsPath(filters), { signal, cache: 'no-store' });
   const data: unknown = await response.json().catch(() => null);
   const errorMessage =
@@ -92,8 +104,12 @@ export async function fetchIncidents(
       ? data.error
       : 'Incident data is temporarily unavailable.';
   if (!response.ok) throw new Error(errorMessage);
-  if (!data || typeof data !== 'object' || !('incidents' in data) || !Array.isArray(data.incidents)) {
+  if (!isMapIncidentsResponse(data)) {
     throw new Error('Incident data is temporarily unavailable.');
   }
-  return data.incidents as PublicIncident[];
+  return data.incidents;
+}
+
+function isMapIncidentsResponse(value: unknown): value is MapIncidentsResponse {
+  return !!value && typeof value === 'object' && Array.isArray((value as MapIncidentsResponse).incidents);
 }

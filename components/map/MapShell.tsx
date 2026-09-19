@@ -5,24 +5,27 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
+import type { IncidentBbox, MapIncident } from '@/lib/map-incident-types';
 import { formatSeverity } from '@/lib/severity';
 import { formatTimestamp } from '@/lib/utils';
+import { MapFilters } from '@/components/map/MapFilters';
 import {
-  fetchIncidents,
+  fetchMapIncidents,
   formatConfidence,
   incidentsQuery,
   isEmergencyIncident,
   mappableIncidents,
-  parseIncidentFilters,
+  parseMapFilters,
+  roundBbox,
+  sameBbox,
   slugLabel,
-  type IncidentFilters,
-  type PublicIncident,
-} from '@/lib/incidents-client';
-import { MapFilters } from '@/components/MapFilters';
+  urlFiltersQuery,
+  type MapListFilters,
+} from '@/components/map/incidents';
 
-const IncidentMap = dynamic(() => import('@/components/IncidentMap'), {
+const IncidentMap = dynamic(() => import('@/components/map/IncidentMap'), {
   ssr: false,
   loading: () => (
     <div className="grid h-full place-items-center text-sm text-slate-500">Loading map…</div>
@@ -32,22 +35,31 @@ const IncidentMap = dynamic(() => import('@/components/IncidentMap'), {
 export function MapShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const filters = useMemo(() => parseIncidentFilters(searchParams), [searchParams]);
+  const urlFilters = useMemo(() => parseMapFilters(searchParams), [searchParams]);
+  const urlKey = urlFiltersQuery(urlFilters);
+  const [bbox, setBbox] = useState<IncidentBbox | undefined>(undefined);
+  const filters = useMemo(() => ({ ...urlFilters, bbox }), [urlFilters, bbox]);
   const queryKey = incidentsQuery(filters);
-  const [incidents, setIncidents] = useState<PublicIncident[] | null>(null);
+  const [incidents, setIncidents] = useState<MapIncident[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [loadedUrlKey, setLoadedUrlKey] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
-  const loading = loadedKey !== queryKey;
+  const waitingForBounds = !bbox;
+  const loading = waitingForBounds || loadedUrlKey !== urlKey;
+  const refreshing = !loading && loadedKey !== queryKey;
+  const bboxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (!bbox) return;
     const controller = new AbortController();
-    fetchIncidents(filters, controller.signal)
+    fetchMapIncidents(filters, controller.signal)
       .then((rows) => {
         setIncidents(rows);
         setError(null);
         setLoadedKey(queryKey);
+        setLoadedUrlKey(urlKey);
         setSelectedId((current) => (current && rows.some((row) => row.id === current) ? current : null));
       })
       .catch((cause: unknown) => {
@@ -55,24 +67,38 @@ export function MapShell() {
         setIncidents(null);
         setError(cause instanceof Error ? cause.message : 'Incident data is temporarily unavailable.');
         setLoadedKey(queryKey);
+        setLoadedUrlKey(urlKey);
       });
     return () => controller.abort();
-  }, [filters, queryKey, retryTick]);
+  }, [bbox, filters, queryKey, retryTick, urlKey]);
 
-  const visible = loadedKey === queryKey ? incidents : null;
+  const onBounds = useCallback((next: IncidentBbox) => {
+    const rounded = roundBbox(next);
+    if (bboxTimer.current) clearTimeout(bboxTimer.current);
+    bboxTimer.current = setTimeout(() => {
+      setBbox((current) => (sameBbox(current, rounded) ? current : rounded));
+    }, 280);
+  }, []);
+
+  const visible = loadedUrlKey === urlKey ? incidents : null;
   const pins = useMemo(() => mappableIncidents(visible ?? []), [visible]);
   const selected = pins.find((incident) => incident.id === selectedId) ?? null;
   const unmapped = (visible?.length ?? 0) - pins.length;
-  const visibleError = loadedKey === queryKey ? error : null;
+  const visibleError = loadedUrlKey === urlKey ? error : null;
 
-  const applyFilters = (next: IncidentFilters) => {
-    router.replace(`/map?${incidentsQuery(next)}`, { scroll: false });
+  const applyFilters = (next: MapListFilters) => {
+    router.replace(`/map?${urlFiltersQuery(next)}`, { scroll: false });
   };
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-slate-100">
       <div className="absolute inset-0">
-        <IncidentMap incidents={pins} selectedId={selectedId} onSelect={setSelectedId} />
+        <IncidentMap
+          incidents={pins}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onBounds={onBounds}
+        />
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-[1100] p-3">
@@ -87,7 +113,9 @@ export function MapShell() {
                     ? 'Loading GET /api/incidents…'
                     : visibleError
                       ? 'Could not read the live incident API'
-                      : `${pins.length} pin${pins.length === 1 ? '' : 's'} from saved incidents`}
+                      : refreshing
+                        ? 'Updating pins for this view…'
+                        : `${pins.length} pin${pins.length === 1 ? '' : 's'} from saved incidents`}
                   {unmapped > 0 ? ` · ${unmapped} without GPS` : ''}
                 </p>
               </div>
@@ -96,7 +124,7 @@ export function MapShell() {
               Report
             </Link>
           </div>
-          <MapFilters filters={filters} onChange={applyFilters} />
+          <MapFilters filters={urlFilters} onChange={applyFilters} />
           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-500">
             <span><span className="mr-1 inline-block size-2.5 rounded-full bg-blue-600" />Ordinary</span>
             <span><span className="mr-1 inline-block size-2.5 rounded-full bg-amber-500" />Super-report</span>
@@ -110,6 +138,7 @@ export function MapShell() {
                 className="text-btn"
                 onClick={() => {
                   setLoadedKey(null);
+                  setLoadedUrlKey(null);
                   setRetryTick((tick) => tick + 1);
                 }}
               >
@@ -130,8 +159,8 @@ export function MapShell() {
 
       {!loading && !visibleError && visible && visible.length === 0 && (
         <EmptyCard
-          title="No incidents in the database yet"
-          body="This map only plots real GET /api/incidents results. Submit a photo report with GPS from the home screen — there are no fixture pins."
+          title="No incidents in this view"
+          body="This map only plots real GET /api/incidents centroids. Pan the map or submit a photo report with GPS — there are no fixture pins."
         />
       )}
 
@@ -167,6 +196,9 @@ export function MapShell() {
               )}
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold capitalize text-slate-700">
                 {slugLabel(selected.incident_type)}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold capitalize text-slate-700">
+                {selected.status}
               </span>
             </div>
             <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">

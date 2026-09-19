@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import L from 'leaflet';
 import { MapContainer, Marker, TileLayer, ZoomControl, useMap, useMapEvents } from 'react-leaflet';
-import {
-  isEmergencyIncident,
-  type MappableIncident,
-} from '@/lib/incidents-client';
+import type { IncidentBbox } from '@/lib/map-incident-types';
+import { isEmergencyIncident, type MappableIncident } from '@/components/map/incidents';
 import 'leaflet/dist/leaflet.css';
 import './incident-map.css';
 
@@ -34,19 +32,25 @@ function pinIcon(incident: MappableIncident, selected: boolean): L.DivIcon {
   });
 }
 
-function FitPins({ positions }: { positions: [number, number][] }) {
+function boundsFromMap(map: L.Map): IncidentBbox {
+  const bounds = map.getBounds();
+  return {
+    minLat: bounds.getSouth(),
+    maxLat: bounds.getNorth(),
+    minLon: bounds.getWest(),
+    maxLon: bounds.getEast(),
+  };
+}
+
+function BoundsSync({ onBounds }: { onBounds: (bbox: IncidentBbox) => void }) {
   const map = useMap();
   useEffect(() => {
-    if (positions.length === 0) {
-      map.setView(BALTIMORE, 12);
-      return;
-    }
-    if (positions.length === 1) {
-      map.setView(positions[0], 15);
-      return;
-    }
-    map.fitBounds(positions, { padding: [72, 72], maxZoom: 16 });
-  }, [map, positions]);
+    onBounds(boundsFromMap(map));
+  }, [map, onBounds]);
+  useMapEvents({
+    moveend: () => onBounds(boundsFromMap(map)),
+    zoomend: () => onBounds(boundsFromMap(map)),
+  });
   return null;
 }
 
@@ -59,16 +63,13 @@ export default function IncidentMap({
   incidents,
   selectedId,
   onSelect,
+  onBounds,
 }: {
   incidents: MappableIncident[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  onBounds: (bbox: IncidentBbox) => void;
 }) {
-  const positions = useMemo(
-    () => incidents.map((incident): [number, number] => [incident.latitude, incident.longitude]),
-    [incidents],
-  );
-
   return (
     <div className="incident-map">
       <MapContainer
@@ -83,7 +84,7 @@ export default function IncidentMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <ZoomControl position="bottomright" />
-        <FitPins positions={positions} />
+        <BoundsSync onBounds={onBounds} />
         <MapClicks onDeselect={() => onSelect(null)} />
         {incidents.map((incident) => (
           <Marker
