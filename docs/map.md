@@ -28,6 +28,14 @@ zoom; that is not database deduplication. Super-reports remain
 
 Missing `highest_seriousness` is never treated as 0.
 
+## Selected sheet photo
+
+Selecting a pin loads `GET /api/incidents?id=` and shows the latest attached
+report `image_path` (public or signed http(s) URL). The list `MapIncident`
+payload stays unchanged. The detail DTO still strips `session_id`,
+`image_hash`, and other ownership fields. Missing or invalid photos render a
+compact placeholder; the sheet and confirm controls stay usable.
+
 ## I see this too
 
 `confirmation_count` is a lighter community signal than photo evidence.

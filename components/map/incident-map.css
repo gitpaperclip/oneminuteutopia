@@ -325,16 +325,52 @@
 
 .map-sheet-card {
   pointer-events: auto;
+  display: flex;
+  flex-direction: column;
   margin: 0 auto;
   max-width: 32rem;
   max-height: min(54dvh, 460px);
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 18px;
   padding: 14px 16px 16px;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+}
+
+.map-sheet-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.map-sheet-photo {
+  position: relative;
+  height: 112px;
+  margin: 0 0 10px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f3f4f6;
+  flex-shrink: 0;
+}
+
+.map-sheet-photo.is-empty {
+  height: 72px;
+}
+
+.map-sheet-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.map-sheet-photo-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #94a3b8;
 }
 
 .map-sheet-head {
@@ -423,7 +459,8 @@
 }
 
 .map-confirm {
-  margin-top: 14px;
+  flex-shrink: 0;
+  margin-top: 12px;
 }
 
 .map-confirm .btn {

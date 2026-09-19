@@ -1,4 +1,9 @@
-import type { IncidentBbox, MapIncident, MapIncidentsResponse } from '@/lib/map-incident-types';
+import type {
+  IncidentBbox,
+  MapIncident,
+  MapIncidentsResponse,
+  PublicIncidentReport,
+} from '@/lib/map-incident-types';
 import { mappableIncidents } from '@/lib/map-geojson';
 
 export type { MappableIncident } from '@/lib/map-geojson';
@@ -102,6 +107,30 @@ export async function fetchMapIncidents(
 
 function isMapIncidentsResponse(value: unknown): value is MapIncidentsResponse {
   return !!value && typeof value === 'object' && Array.isArray((value as MapIncidentsResponse).incidents);
+}
+
+export async function fetchIncidentDetail(
+  incidentId: string,
+  signal?: AbortSignal,
+): Promise<{ reports: PublicIncidentReport[] }> {
+  const response = await fetch(`/api/incidents?id=${encodeURIComponent(incidentId)}`, {
+    signal,
+    cache: 'no-store',
+  });
+  const data: unknown = await response.json().catch(() => null);
+  const errorMessage =
+    data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+      ? data.error
+      : 'Incident photo is temporarily unavailable.';
+  if (!response.ok) throw new Error(errorMessage);
+  if (!isIncidentDetail(data)) {
+    throw new Error('Incident photo is temporarily unavailable.');
+  }
+  return data;
+}
+
+function isIncidentDetail(value: unknown): value is { reports: PublicIncidentReport[] } {
+  return !!value && typeof value === 'object' && Array.isArray((value as { reports?: unknown }).reports);
 }
 
 function confirmationError(data: unknown, fallback: string): string {

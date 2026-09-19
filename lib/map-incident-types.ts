@@ -96,6 +96,26 @@ export function toMapIncident(incident: {
   };
 }
 
+export interface PublicIncidentReport {
+  id: string;
+  incident_id: string | null;
+  image_path: string;
+  category: string;
+  incident_type: string | null;
+  short_label: string;
+  user_description: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  location_address: string | null;
+  ai_confidence: number | null;
+  seriousness: number | null;
+  analysis_status: string | null;
+  tags: string[];
+  baltimore_service_candidates: string[];
+  routing_disposition: string;
+  created_at: number;
+}
+
 export function toPublicIncidentReports<T extends {
   id: string;
   incident_id: string | null;
@@ -114,7 +134,7 @@ export function toPublicIncidentReports<T extends {
   baltimore_service_candidates: string[] | null;
   routing_disposition: string;
   created_at: number;
-}>(reports: T[]) {
+}>(reports: T[]): PublicIncidentReport[] {
   return reports.map(report => ({
     id: report.id,
     incident_id: report.incident_id,
@@ -134,6 +154,37 @@ export function toPublicIncidentReports<T extends {
     routing_disposition: report.routing_disposition,
     created_at: report.created_at,
   }));
+}
+
+/** Latest public/signed http(s) photo URL from attached reports. Null if none. */
+export function publicIncidentImageUrl(
+  reports: Array<Pick<PublicIncidentReport, 'image_path' | 'created_at'>>,
+): string | null {
+  let latest: { url: string; created_at: number } | null = null;
+  for (const report of reports) {
+    const url = sanitizePublicPhotoUrl(report.image_path);
+    if (!url) continue;
+    const created =
+      typeof report.created_at === 'number' && Number.isFinite(report.created_at)
+        ? report.created_at
+        : Number.NEGATIVE_INFINITY;
+    if (!latest || created >= latest.created_at) {
+      latest = { url, created_at: created };
+    }
+  }
+  return latest?.url ?? null;
+}
+
+export function sanitizePublicPhotoUrl(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    return trimmed;
+  } catch {
+    return null;
+  }
 }
 
 export function parseBooleanQuery(value: string | null, label: string): boolean {

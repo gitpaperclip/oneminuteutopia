@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { IncidentBbox, MapIncident } from '@/lib/map-incident-types';
+import { publicIncidentImageUrl, type IncidentBbox, type MapIncident } from '@/lib/map-incident-types';
 import {
   MAP_COPY,
   confirmationTotalLabel,
@@ -20,6 +20,7 @@ import { formatTimestamp } from '@/lib/utils';
 import { MapFilterPanel, MapFilterToggle } from '@/components/map/MapFilters';
 import {
   fetchConfirmation,
+  fetchIncidentDetail,
   fetchMapIncidents,
   incidentsQuery,
   isEmergencyIncident,
@@ -261,38 +262,41 @@ function IncidentSheet({
   return (
     <aside className="map-sheet">
       <article className="map-sheet-card" role="dialog" aria-labelledby="map-sheet-title">
-        <div className="map-sheet-head">
-          <h2 id="map-sheet-title" className="map-sheet-title">{title}</h2>
-          <button type="button" className="map-sheet-close" aria-label="Close" onClick={onClose}>
-            <CloseIcon />
-          </button>
-        </div>
-        {description ? <p className="map-sheet-desc">{description}</p> : null}
-        <div className="map-sheet-badges">
-          {isEmergencyIncident(incident) && (
-            <span className="map-badge map-badge-emergency">Emergency</span>
-          )}
-          {incident.is_super_report && (
-            <span className="map-badge map-badge-super">{superReportBadge(incident.evidence_count)}</span>
-          )}
-          <span className="map-badge">{incident.status}</span>
-        </div>
-        <dl className="map-sheet-meta">
-          <div>
-            <dt>Seriousness</dt>
-            <dd>{formatSeverity(incident.highest_seriousness)}</dd>
+        <div className="map-sheet-scroll">
+          <IncidentSheetPhoto key={incident.id} incidentId={incident.id} />
+          <div className="map-sheet-head">
+            <h2 id="map-sheet-title" className="map-sheet-title">{title}</h2>
+            <button type="button" className="map-sheet-close" aria-label="Close" onClick={onClose}>
+              <CloseIcon />
+            </button>
           </div>
-          <div>
-            <dt>Last reported</dt>
-            <dd>{formatTimestamp(incident.last_reported_at ?? incident.updated_at, 'date')}</dd>
+          {description ? <p className="map-sheet-desc">{description}</p> : null}
+          <div className="map-sheet-badges">
+            {isEmergencyIncident(incident) && (
+              <span className="map-badge map-badge-emergency">Emergency</span>
+            )}
+            {incident.is_super_report && (
+              <span className="map-badge map-badge-super">{superReportBadge(incident.evidence_count)}</span>
+            )}
+            <span className="map-badge">{incident.status}</span>
           </div>
-          {incident.location_address ? (
-            <div className="map-sheet-meta-wide">
-              <dt>Location</dt>
-              <dd>{incident.location_address}</dd>
+          <dl className="map-sheet-meta">
+            <div>
+              <dt>Seriousness</dt>
+              <dd>{formatSeverity(incident.highest_seriousness)}</dd>
             </div>
-          ) : null}
-        </dl>
+            <div>
+              <dt>Last reported</dt>
+              <dd>{formatTimestamp(incident.last_reported_at ?? incident.updated_at, 'date')}</dd>
+            </div>
+            {incident.location_address ? (
+              <div className="map-sheet-meta-wide">
+                <dt>Location</dt>
+                <dd>{incident.location_address}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
         <div className="map-confirm">
           <button
             type="button"
@@ -311,6 +315,65 @@ function IncidentSheet({
         </div>
       </article>
     </aside>
+  );
+}
+
+function IncidentSheetPhoto({ incidentId }: { incidentId: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchIncidentDetail(incidentId, controller.signal)
+      .then((detail) => {
+        setUrl(publicIncidentImageUrl(detail.reports));
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        setUrl(null);
+      });
+    return () => controller.abort();
+  }, [incidentId]);
+
+  return (
+    <div className={`map-sheet-photo${url ? '' : ' is-empty'}`}>
+      {url ? (
+        <img
+          src={url}
+          alt=""
+          onError={() => setUrl(null)}
+        />
+      ) : (
+        <div className="map-sheet-photo-placeholder" aria-hidden="true">
+          <PhotoPlaceholderIcon />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhotoPlaceholderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <rect
+        x="3.5"
+        y="5.5"
+        width="17"
+        height="13"
+        rx="2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <circle cx="9" cy="10.2" r="1.5" fill="currentColor" />
+      <path
+        d="M6.5 16.2 10 12.8l2.2 2.2 2.4-3 4.4 4.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
