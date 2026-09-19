@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { CATEGORIES, MAX_IMAGE_BYTES, validateAnalysis, parseGemini, imageMime } from '../lib/hazard-analysis.mjs';
 import { ANALYSIS_TIMEOUT_MS, GeminiAnalysisError, GeminiService } from '../lib/gemini.ts';
 import { AnalysisStore } from '../lib/analysis-store.ts';
+import { fallbackIncidentType, INCIDENT_TYPES } from '../lib/incident-taxonomy.mjs';
+import { assertCompleteBaltimoreRouting, baltimoreRouteForIncidentType } from '../lib/baltimore-311-routing.mjs';
 
 const originalEnvironments = new WeakMap();
 function setEnv(t, key, value) {
@@ -33,7 +35,11 @@ function configureSupabase(t) {
   setEnv(t, 'SUPABASE_SECRET_KEY', undefined);
 }
 
-const result = { category: 'roads_and_sidewalks', seriousness: 6, ai_confidence: 80 };
+const result = {
+  category: 'roads_and_sidewalks', incident_type: 'pothole',
+  seriousness: 6, ai_confidence: 80,
+  context_summary: 'A pothole is visible in the roadway.', context_tags: ['roadway'],
+};
 const jpeg = Buffer.from([255, 216, 255]);
 const response = (body, status = 200) => new Response(JSON.stringify(body), { status });
 const aiResponse = (value = result) => ({
@@ -48,10 +54,16 @@ test('all 12 categories obey the distinct hazardous, clear and unassessable cont
   assert.equal(CATEGORIES.length, 12);
   for (const category of CATEGORIES) {
     const value = category === 'unable_to_assess'
-      ? { category, seriousness: null, ai_confidence: 0 }
-      : { category, seriousness: category === 'no_visible_hazard' ? 0 : 1, ai_confidence: 100 };
+      ? { category, incident_type: 'unable_to_assess', seriousness: null, ai_confidence: 0, context_summary: 'The image cannot be assessed.', context_tags: [] }
+      : { category, incident_type: fallbackIncidentType(category), seriousness: category === 'no_visible_hazard' ? 0 : 1, ai_confidence: 100, context_summary: 'Visible context was assessed.', context_tags: [] };
     assert.deepEqual(validateAnalysis(value), value);
   }
+});
+
+test('every fine-grained incident type has an explicit Baltimore disposition', () => {
+  assert.equal(assertCompleteBaltimoreRouting(), true);
+  assert.equal(baltimoreRouteForIncidentType('pothole').service_types[0], 'TRM-Potholes');
+  assert.equal(baltimoreRouteForIncidentType('garbage_fire').disposition, 'emergency');
 });
 
 test('invalid scores, unexpected fields and impossible category/score combinations are rejected', () => {
@@ -62,8 +74,10 @@ test('invalid scores, unexpected fields and impossible category/score combinatio
     { ...result, seriousness: '6' }, { ...result, ai_confidence: '80' },
     { ...result, ai_confidence: 101 }, { ...result, ai_confidence: -1 },
     { ...result, ai_confidence: 1.5 }, { ...result, ai_confidence: NaN },
+    { ...result, incident_type: 'garbage_fire' }, { ...result, context_summary: '' },
+    { ...result, context_tags: ['invented'] }, { ...result, context_tags: ['roadway', 'roadway'] },
     { ...result, routing: '911' }, { ...result, category: 'unable_to_assess' },
-    { category: 'unable_to_assess', seriousness: null, ai_confidence: 80 },
+    { ...result, category: 'unable_to_assess', incident_type: 'unable_to_assess', seriousness: null, ai_confidence: 80 },
     { ...result, category: 'no_visible_hazard' },
   ];
   for (const value of invalid) assert.throws(() => validateAnalysis(value), { status: 502 });
@@ -73,8 +87,8 @@ test('Gemini response parser reads final output parts and ignores private though
   const data = aiResponse();
   data.candidates[0].content.parts = [
     { thought: true, text: 'Not part of the answer' },
-    { text: '{"category":"roads_and_sidewalks",' },
-    { text: '"seriousness":6,"ai_confidence":80}' },
+    { text: JSON.stringify(result).slice(0, 80) },
+    { text: JSON.stringify(result).slice(80) },
   ];
   assert.deepEqual(parseGemini(data), result);
 });
@@ -122,9 +136,10 @@ test('production Gemini service sends the image, strict schema and a bounded sin
     assert.equal(init.redirect, 'error');
     const body = JSON.parse(init.body);
     const config = body.generationConfig;
-    assert.deepEqual(config.responseJsonSchema.required, ['category', 'seriousness', 'ai_confidence']);
+    assert.deepEqual(config.responseJsonSchema.required, ['category', 'incident_type', 'seriousness', 'ai_confidence', 'context_summary', 'context_tags']);
     assert.equal(config.responseJsonSchema.additionalProperties, false);
     assert.deepEqual(config.responseJsonSchema.properties.category.enum, CATEGORIES);
+    assert.deepEqual(config.responseJsonSchema.properties.incident_type.enum, INCIDENT_TYPES);
     assert.deepEqual(config.responseJsonSchema.properties.seriousness, { type: ['integer', 'null'], minimum: 0, maximum: 10 });
     assert.equal(config.responseMimeType, 'application/json');
     assert.equal('responseFormat' in config, false);
@@ -345,7 +360,11 @@ test('Supabase persists the assessment using server credentials', async t => {
     assert.equal(data.seriousness, 6);
     assert.equal(data.ai_confidence, 80);
     assert.equal(data.analysis_status, 'complete');
-    assert.equal(data.prompt_version, '1');
+    assert.equal(data.prompt_version, '2');
+    assert.equal(data.incident_type, 'pothole');
+    assert.deepEqual(data.tags, ['pothole', 'roadway']);
+    assert.deepEqual(data.baltimore_service_candidates, ['TRM-Potholes', 'TRM-Pickup Pothole']);
+    assert.equal(data.routing_disposition, '311');
     assert.ok(!('overall_danger' in data));
     return response([{ id: 'saved', ...data }], 201);
   });
@@ -380,7 +399,9 @@ test('manual fallback is saved as unavailable with no fabricated seriousness', a
     return response([{ id: 'saved', ...data }], 201);
   });
   await AnalysisStore.save({
-    ...storedInput, category: 'unable_to_assess', seriousness: null, ai_confidence: 0, analysis_status: 'unavailable',
+    ...storedInput, category: 'unable_to_assess', incident_type: 'unable_to_assess',
+    seriousness: null, ai_confidence: 0, context_summary: 'Image analysis was unavailable.',
+    context_tags: [], analysis_status: 'unavailable',
   });
 });
 

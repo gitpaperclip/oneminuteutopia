@@ -5,7 +5,11 @@ import { PGlite } from '@electric-sql/pglite';
 import { DatabaseService } from '../lib/db.ts';
 import { validateReportInput } from '../lib/report-input.ts';
 
-const migrations = await Promise.all(['202609190000_reporting.sql', '202609190001_image_analyses.sql'].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
+const migrations = await Promise.all([
+  '202609190000_reporting.sql', '202609190001_image_analyses.sql',
+  '202609190002_incident_context_and_clustering.sql',
+  '202609190003_baltimore_311_routing.sql',
+].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Run production tagged SQL against an isolated PostgreSQL engine, including its real transactions.
 function connect(db) {
@@ -25,8 +29,10 @@ async function setup(t) {
   for (const migration of migrations) await db.exec(migration);
   t.mock.method(DatabaseService, 'getConnection', () => connect(db));
   const session = await DatabaseService.createSession();
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo.jpg','saved-hash','roads_and_sidewalks',6,81,'gemini-test','1')`, [input.analysis_id, session]);
+  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type,
+    seriousness, ai_confidence, context_summary, context_tags, tags, model, prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo.jpg','saved-hash','roads_and_sidewalks','pothole',
+    6,81,'A pothole is visible in the roadway.',array['roadway'],array['pothole','roadway'],'gemini-test','2')`, [input.analysis_id, session]);
   return { db, session };
 }
 
@@ -67,6 +73,35 @@ test('concurrent retries return one receipt and one incident', async t => {
   assert.equal(new Set(result.map(r => r.report.id)).size, 1);
   assert.equal(result.filter(r => !r.duplicate).length, 1);
   for (const table of ['reports','incidents']) assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`)).rows[0].n, 1);
+});
+
+test('nearby reports with the same normalized type become one queryable super-report', async t => {
+  const { db, session } = await setup(t);
+  const first = await DatabaseService.submitReport(session, validateReportInput({
+    ...input, latitude: 39.2904, longitude: -76.6122,
+  }));
+  assert.equal(first.clustered, false);
+
+  const secondSession = await DatabaseService.createSession();
+  const secondAnalysis = '22222222-2222-4222-8222-222222222222';
+  await db.query(`INSERT INTO image_analyses (id,session_id,image_path,image_hash,category,incident_type,
+    seriousness,ai_confidence,context_summary,context_tags,tags,model,prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo-2.jpg','saved-hash-2','roads_and_sidewalks','pothole',
+    8,90,'A large pothole is visible beside a sidewalk.',array['roadway','sidewalk'],
+    array['pothole','roadway','sidewalk'],'gemini-test','2')`, [secondAnalysis, secondSession]);
+  const second = await DatabaseService.submitReport(secondSession, validateReportInput({
+    ...input, analysis_id: secondAnalysis, latitude: 39.2908, longitude: -76.6122,
+  }));
+
+  assert.equal(second.clustered, true);
+  assert.equal(second.report.incident_id, first.report.incident_id);
+  const incident = await DatabaseService.getIncident(first.report.incident_id);
+  assert.equal(incident.evidence_count, 2);
+  assert.equal(incident.highest_seriousness, 8);
+  assert.equal(incident.average_ai_confidence, 0.855);
+  assert.deepEqual(incident.tags, ['pothole', 'roadway', 'sidewalk']);
+  const common = await DatabaseService.listIncidents({ incidentType: 'pothole', commonOnly: true });
+  assert.deepEqual(common.map(item => item.id), [incident.id]);
 });
 
 test('report insert failure rolls back incident and link, then retry succeeds', async t => {

@@ -7,6 +7,8 @@ import { validateReportInput } from '../lib/report-input.ts';
 
 const migrations = await Promise.all([
   '202609190000_reporting.sql', '202609190001_image_analyses.sql',
+  '202609190002_incident_context_and_clustering.sql',
+  '202609190003_baltimore_311_routing.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Historical fixtures intentionally do not derive their schema from the new migrations.
@@ -118,8 +120,15 @@ test('upgrading main preserves legacy records and timestamps while supporting th
   await DatabaseService.testConnection();
   assert.deepEqual((await db.query('SELECT * FROM reports')).rows[0], {
     ...oldReport, seriousness: null, analysis_status: null,
+    incident_type: 'other_hazard', context_summary: null, tags: ['other_hazard'],
+    baltimore_service_candidates: [], routing_disposition: 'manual_review',
   });
-  assert.deepEqual((await db.query('SELECT * FROM incidents')).rows[0], oldIncident);
+  assert.deepEqual((await db.query('SELECT * FROM incidents')).rows[0], {
+    ...oldIncident, incident_type: 'other_hazard', tags: ['other_hazard'],
+    highest_seriousness: null, average_ai_confidence: null, ai_evidence_count: 0,
+    last_reported_at: legacyTime, cluster_radius_m: 150,
+    baltimore_service_candidates: [], routing_disposition: 'manual_review',
+  });
   assert.deepEqual((await db.query('SELECT * FROM sessions')).rows[0], oldSession);
   assert.deepEqual((await db.query('SELECT * FROM status_events')).rows[0], oldEvent);
   assert.equal((await DatabaseService.getReport(legacyReport)).created_at, legacyTime);
@@ -155,6 +164,10 @@ test('upgrading an already-applied overlay preserves its analysis and enables ma
   await migrate(db);
   assert.deepEqual((await db.query('SELECT * FROM image_analyses')).rows[0], {
     ...oldAnalysis, analysis_status: 'complete',
+    incident_type: 'roads_and_sidewalks_unspecified',
+    context_summary: 'Legacy analysis; no image context was captured.',
+    context_tags: [], tags: ['roads_and_sidewalks_unspecified'],
+    baltimore_service_candidates: [], routing_disposition: 'manual_review',
   });
   const retry = await DatabaseService.submitReport(legacySession, validateReportInput({
     analysis_id: analysisId, category: 'roads_and_sidewalks', location_source: 'manual', location_address: 'Original location',
@@ -164,10 +177,11 @@ test('upgrading an already-applied overlay preserves its analysis and enables ma
   assert.equal(retry.report.created_at, legacyTime);
 
   const manualId = '22222222-2222-4222-8222-222222222222';
-  await db.query(`INSERT INTO image_analyses (id,session_id,image_path,image_hash,category,seriousness,
-    ai_confidence,model,prompt_version,analysis_status)
-    VALUES ($1,$2,'https://storage.example/manual.jpg','manual-hash','unable_to_assess',null,0,
-    'gemini-2.5-flash','1','unavailable')`, [manualId, legacySession]);
+  await db.query(`INSERT INTO image_analyses (id,session_id,image_path,image_hash,category,incident_type,seriousness,
+    ai_confidence,context_summary,context_tags,tags,model,prompt_version,analysis_status)
+    VALUES ($1,$2,'https://storage.example/manual.jpg','manual-hash','unable_to_assess','unable_to_assess',null,0,
+    'Image analysis was unavailable.',array[]::text[],array['unable_to_assess'],
+    'gemini-2.5-flash','2','unavailable')`, [manualId, legacySession]);
   const { report, duplicate } = await DatabaseService.submitReport(legacySession, validateReportInput({
     analysis_id: manualId, category: 'other_hazard', location_source: 'manual', location_address: 'Main Street',
   }));
@@ -179,5 +193,9 @@ test('upgrading an already-applied overlay preserves its analysis and enables ma
   assert.equal((await db.query('SELECT count(*)::int AS n FROM incidents')).rows[0].n, 2);
   assert.deepEqual((await db.query('SELECT * FROM image_analyses WHERE id=$1', [analysisId])).rows[0], {
     ...oldAnalysis, analysis_status: 'complete',
+    incident_type: 'roads_and_sidewalks_unspecified',
+    context_summary: 'Legacy analysis; no image context was captured.',
+    context_tags: [], tags: ['roads_and_sidewalks_unspecified'],
+    baltimore_service_candidates: [], routing_disposition: 'manual_review',
   });
 });

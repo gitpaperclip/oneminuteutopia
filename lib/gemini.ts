@@ -56,8 +56,11 @@ async function requestFailure(response: Response): Promise<GeminiAnalysisError> 
 
 export interface AnalysisResult {
   category: string;
+  incident_type: string;
   seriousness: number | null;
   ai_confidence: number;
+  context_summary: string;
+  context_tags: string[];
 }
 
 export class GeminiService {

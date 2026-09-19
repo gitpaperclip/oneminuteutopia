@@ -1,8 +1,9 @@
 # Image analysis and reporting
 
-This pipeline produces an initial assessment from a photo: category, seriousness
-(0–10), and AI confidence (0–100). It saves the server result before review and
-uses that saved record when creating the report.
+This pipeline produces an initial assessment from a photo: broad category,
+normalized incident type, visible context, seriousness (0–10), and AI confidence
+(0–100). It saves the server result before review and uses that saved record when
+creating the report.
 
 The supplied ZIP is an overlay for the repository after PR #7, not a standalone
 application. This integration keeps its three-field AI contract and saved
@@ -13,7 +14,9 @@ image reporting and AI analysis.
 ## Setup
 
 1. Review and apply `supabase/migrations/202609190000_reporting.sql`, then
-   `supabase/migrations/202609190001_image_analyses.sql` in the Supabase project.
+   `supabase/migrations/202609190001_image_analyses.sql`, then
+   `supabase/migrations/202609190002_incident_context_and_clustering.sql`, then
+   `supabase/migrations/202609190003_baltimore_311_routing.sql` in the Supabase project.
    These contain the base reporting tables and `public.image_analyses`.
    API requests never perform schema creation or alteration.
 2. Create a public-read Storage bucket named `report-photos` in that project.
@@ -46,7 +49,7 @@ migration.
    concurrently. Gemini receives a structured response schema and an approximately
    eight-second request deadline. The prompt treats text inside the photo as
    untrusted content.
-4. **Save:** validate all three AI fields and persist the analysis with its
+4. **Save:** validate every AI field against preset taxonomies and persist the analysis with its
    session owner, photo path/hash, model, prompt version, and status. Return the
    saved `analysis_id` to the review screen only after persistence succeeds.
 5. **Review:** show the saved AI assessment and permit a category correction,
@@ -55,7 +58,8 @@ migration.
 6. **Submit:** load the saved analysis by ID and session. The server uses its
    stored image and scores rather than trusting browser AI fields. It saves the
    report and analysis link in one database transaction, locking the analysis
-   row so simultaneous retries return the existing report.
+   row so simultaneous retries return the existing report. Nearby recent reports
+   with the same normalized incident type attach to one aggregate incident.
 7. **Receipt:** navigate only after the database commit. A refresh loads the
    durable saved report.
 

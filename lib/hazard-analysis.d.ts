@@ -16,14 +16,20 @@ export class HttpError extends Error {
 
 export function validateAnalysis(value: unknown): {
   category: string;
+  incident_type: string;
   seriousness: number | null;
   ai_confidence: number;
+  context_summary: string;
+  context_tags: string[];
 };
 
 export function parseGemini(data: unknown): {
   category: string;
+  incident_type: string;
   seriousness: number | null;
   ai_confidence: number;
+  context_summary: string;
+  context_tags: string[];
 };
 
 export function imageMime(bytes: Buffer | Uint8Array): string;

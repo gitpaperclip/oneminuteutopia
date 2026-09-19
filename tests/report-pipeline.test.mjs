@@ -3,10 +3,20 @@ import assert from 'node:assert/strict';
 import { prepareReport } from '../lib/report-pipeline.ts';
 import { AnalysisStorageError } from '../lib/analysis-store.ts';
 import { GeminiAnalysisError, GeminiService } from '../lib/gemini.ts';
+import { normalizedTags } from '../lib/incident-taxonomy.mjs';
+import { baltimoreRouteForIncidentType } from '../lib/baltimore-311-routing.mjs';
 
 const jpeg = Buffer.from([255, 216, 255]);
 const image = { path: 'https://test.supabase.co/storage/v1/object/public/report-photos/photo.jpg', hash: 'saved-image-hash' };
-const assessment = { category: 'roads_and_sidewalks', seriousness: 6, ai_confidence: 80 };
+const assessment = {
+  category: 'roads_and_sidewalks', incident_type: 'pothole', seriousness: 6, ai_confidence: 80,
+  context_summary: 'A pothole is visible in the roadway.', context_tags: ['roadway'],
+};
+const unavailable = {
+  category: 'unable_to_assess', incident_type: 'unable_to_assess', seriousness: null, ai_confidence: 0,
+  context_summary: 'Image analysis was unavailable.', context_tags: [], tags: ['unable_to_assess'],
+  baltimore_service_candidates: [], routing_disposition: 'manual_review',
+};
 
 function deferred() {
   let resolve;
@@ -30,7 +40,15 @@ function createServices(overrides = {}) {
       ...overrides.gemini,
     },
     analyses: {
-      save: async input => { savedInputs.push(input); return { id: 'saved-analysis', report_id: null, ...input }; },
+      save: async input => {
+        savedInputs.push(input);
+        const route = baltimoreRouteForIncidentType(input.incident_type);
+        return {
+          id: 'saved-analysis', report_id: null, ...input,
+          tags: normalizedTags(input.incident_type, input.context_tags),
+          baltimore_service_candidates: [...route.service_types], routing_disposition: route.disposition,
+        };
+      },
       ...overrides.analyses,
     },
   };
@@ -52,7 +70,11 @@ test('storage and AI start concurrently, and review waits for the durable assess
       assert.equal(bytes, jpeg); assert.equal(mime, 'image/jpeg');
       calls.push('gemini'); return gemini.promise;
     } },
-    analyses: { save: input => { calls.push('persist'); return persistence.promise.then(() => ({ id: 'saved-analysis', ...input })); } },
+    analyses: { save: input => { calls.push('persist'); return persistence.promise.then(() => ({
+      id: 'saved-analysis', ...input, tags: normalizedTags(input.incident_type, input.context_tags),
+      baltimore_service_candidates: [...baltimoreRouteForIncidentType(input.incident_type).service_types],
+      routing_disposition: baltimoreRouteForIncidentType(input.incident_type).disposition,
+    })); } },
   });
   let returned = false;
   const pending = prepareReport(jpeg, 'session-owner', services).then(value => { returned = true; return value; });
@@ -69,7 +91,10 @@ test('storage and AI start concurrently, and review waits for the durable assess
   assert.equal(value.success, true);
   assert.equal(value.analysis_id, 'saved-analysis');
   assert.equal(value.analysis_status, 'complete');
-  assert.deepEqual(value.analysis, assessment);
+  assert.deepEqual(value.analysis, {
+    ...assessment, tags: ['pothole', 'roadway'],
+    baltimore_service_candidates: ['TRM-Potholes', 'TRM-Pickup Pothole'], routing_disposition: '311',
+  });
   assert.equal('warning' in value, false);
   assert.equal(warnings.mock.callCount(), 0);
   assert.ok(Number.isInteger(value.processing_ms) && value.processing_ms >= 0);
@@ -89,7 +114,7 @@ test('AI outages, timeouts and invalid responses preserve a manually reportable 
     assert.equal(value.success, true);
     assert.equal(value.analysis_status, 'unavailable');
     assert.equal(value.image_path, image.path);
-    assert.deepEqual(value.analysis, { category: 'unable_to_assess', seriousness: null, ai_confidence: 0 });
+    assert.deepEqual(value.analysis, unavailable);
     assert.match(value.warning, /manual report/);
     assert.equal(savedInputs.length, 1);
     assert.equal(savedInputs[0].analysis_status, 'unavailable');
@@ -110,10 +135,16 @@ test('AI outages, timeouts and invalid responses preserve a manually reportable 
 
 test('a completed but uncertain model response stays distinct from a service outage', async t => {
   const warnings = t.mock.method(console, 'warn', () => {});
-  const uncertain = { category: 'unable_to_assess', seriousness: null, ai_confidence: 0 };
+  const uncertain = {
+    category: 'unable_to_assess', incident_type: 'unable_to_assess', seriousness: null, ai_confidence: 0,
+    context_summary: 'The image is too unclear to assess.', context_tags: [],
+  };
   const { services, savedInputs } = createServices({ gemini: { analyzeImage: async () => uncertain } });
   const value = await prepareReport(jpeg, 'session-owner', services);
-  assert.deepEqual(value.analysis, uncertain);
+  assert.deepEqual(value.analysis, {
+    ...uncertain, tags: ['unable_to_assess'],
+    baltimore_service_candidates: [], routing_disposition: 'manual_review',
+  });
   assert.equal(value.analysis_status, 'complete');
   assert.equal(savedInputs[0].analysis_status, 'complete');
   assert.equal('warning' in value, false);
@@ -130,7 +161,7 @@ test('an invalid model setting cannot block a manually reportable saved photo', 
   const value = await prepareReport(jpeg, 'session-owner', services);
   assert.equal(value.success, true);
   assert.equal(value.analysis_status, 'unavailable');
-  assert.deepEqual(value.analysis, { category: 'unable_to_assess', seriousness: null, ai_confidence: 0 });
+  assert.deepEqual(value.analysis, unavailable);
   assert.equal(savedInputs[0].model, 'unavailable');
   assert.equal(savedInputs[0].image_path, image.path);
   assert.match(value.warning, /manual report/);
@@ -200,7 +231,11 @@ test('unknown errors and forged diagnostic fields cannot leak through logs or th
 });
 
 test('review returns the fields from the persisted analysis, not an unsaved draft', async () => {
-  const durable = { category: 'other_hazard', seriousness: 3, ai_confidence: 65 };
+  const durable = {
+    category: 'other_hazard', incident_type: 'other_hazard', seriousness: 3, ai_confidence: 65,
+    context_summary: 'Loose debris is visible.', context_tags: ['debris'], tags: ['debris', 'other_hazard'],
+    baltimore_service_candidates: ['ECC-Citizen Complaint or Concern'], routing_disposition: 'manual_review',
+  };
   const { services } = createServices({ analyses: { save: async input => ({
     ...input, ...durable, id: 'durable-row-id', image_path: 'stored-photo-url', image_hash: 'stored-photo-hash',
   }) } });

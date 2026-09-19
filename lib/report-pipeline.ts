@@ -15,7 +15,11 @@ export async function prepareReport(buffer: Buffer, sessionId: string, services 
   ]);
   if (image.status === 'rejected') throw new Error('Photo storage failed');
   const complete = assessment.status === 'fulfilled';
-  const analysis: AnalysisResult = complete ? assessment.value : { category: 'unable_to_assess', seriousness: null, ai_confidence: 0 };
+  const analysis: AnalysisResult = complete ? assessment.value : {
+    category: 'unable_to_assess', incident_type: 'unable_to_assess',
+    seriousness: null, ai_confidence: 0,
+    context_summary: 'Image analysis was unavailable.', context_tags: [],
+  };
   const analysis_status = complete ? 'complete' : 'unavailable';
   let model = 'unavailable';
   try { model = services.gemini.getModel(); } catch { /* Invalid AI configuration still permits manual reporting. */ }
@@ -42,7 +46,13 @@ export async function prepareReport(buffer: Buffer, sessionId: string, services 
   }
   return {
     success: true, image_path: saved.image_path, image_hash: saved.image_hash,
-    analysis_id: saved.id, analysis: { category: saved.category, seriousness: saved.seriousness, ai_confidence: saved.ai_confidence },
+    analysis_id: saved.id, analysis: {
+      category: saved.category, incident_type: saved.incident_type,
+      seriousness: saved.seriousness, ai_confidence: saved.ai_confidence,
+      context_summary: saved.context_summary, context_tags: saved.context_tags,
+      tags: saved.tags, baltimore_service_candidates: saved.baltimore_service_candidates,
+      routing_disposition: saved.routing_disposition,
+    },
     analysis_status, processing_ms: Math.round(performance.now() - started),
     ...(!complete ? { warning: 'AI analysis is unavailable. Choose the issue category to continue with a manual report.' } : {}),
   };

@@ -1,5 +1,7 @@
 import 'server-only';
 import { PROMPT_VERSION, validateAnalysis } from './hazard-analysis.mjs';
+import { normalizedTags } from './incident-taxonomy.mjs';
+import { baltimoreRouteForIncidentType } from './baltimore-311-routing.mjs';
 import type { AnalysisResult } from './gemini';
 
 export interface SavedAnalysis extends AnalysisResult {
@@ -7,6 +9,11 @@ export interface SavedAnalysis extends AnalysisResult {
   session_id: string;
   image_path: string;
   image_hash: string;
+  context_summary: string;
+  context_tags: string[];
+  tags: string[];
+  baltimore_service_candidates: string[];
+  routing_disposition: '311' | 'manual_review' | 'emergency' | 'no_submission';
   model: string;
   report_id: string | null;
   analysis_status: 'complete' | 'unavailable';
@@ -42,8 +49,21 @@ export class AnalysisStore {
   }
 
   static async save(data: AnalysisResult & { session_id: string; image_path: string; image_hash: string; model: string; analysis_status: 'complete' | 'unavailable' }) {
-    validateAnalysis({ category: data.category, seriousness: data.seriousness, ai_confidence: data.ai_confidence });
-    const [saved] = await this.request('', { method: 'POST', body: JSON.stringify({ ...data, prompt_version: PROMPT_VERSION }) });
+    validateAnalysis({
+      category: data.category, incident_type: data.incident_type,
+      seriousness: data.seriousness, ai_confidence: data.ai_confidence,
+      context_summary: data.context_summary, context_tags: data.context_tags,
+    });
+    const tags = normalizedTags(data.incident_type, data.context_tags);
+    const route = baltimoreRouteForIncidentType(data.incident_type);
+    if (!route) throw new Error('Analysis incident type has no Baltimore routing contract');
+    const [saved] = await this.request('', {
+      method: 'POST', body: JSON.stringify({
+        ...data, tags, prompt_version: PROMPT_VERSION,
+        baltimore_service_candidates: route.service_types,
+        routing_disposition: route.disposition,
+      }),
+    });
     if (!saved?.id) throw new Error('Analysis was not saved');
     return saved;
   }
