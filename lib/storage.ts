@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { writeFile } from 'fs/promises';
+import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { nanoid } from 'nanoid';
 
@@ -15,6 +15,7 @@ export class StorageService {
     const filename = `${nanoid()}-${hash.substring(0, 8)}.${ext}`;
     const uploadPath = path.join(process.cwd(), 'public', 'uploads', filename);
     
+    await mkdir(path.dirname(uploadPath), { recursive: true });
     await writeFile(uploadPath, buffer);
     
     return {

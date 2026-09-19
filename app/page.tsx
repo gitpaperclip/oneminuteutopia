@@ -80,7 +80,7 @@ export default function ReportPage() {
         setLocationStatus('granted');
       },
       (error) => {
-        console.error('Location error:', error);
+        // Permission denial is expected; the review screen offers manual entry.
         setLocationStatus('denied');
       },
       { enableHighAccuracy: true, timeout: 10000 }
@@ -157,7 +157,9 @@ export default function ReportPage() {
         body: formData,
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => {
+        throw new Error('The server could not process your request. Please try again.');
+      });
 
       if (!response.ok) {
         throw new Error(data.error || 'Upload failed');
@@ -214,7 +216,9 @@ export default function ReportPage() {
         body: JSON.stringify(submissionData),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => {
+        throw new Error('The server could not process your request. Please try again.');
+      });
 
       if (!response.ok) {
         throw new Error(data.error || 'Submission failed');

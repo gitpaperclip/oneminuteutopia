@@ -1,8 +1,12 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import { mkdirSync } from 'fs';
 import { nanoid } from 'nanoid';
 
 const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'app.db');
+if (dbPath !== ':memory:') {
+  mkdirSync(path.dirname(dbPath), { recursive: true });
+}
 const db = new Database(dbPath);
 
 // Initialize database schema
