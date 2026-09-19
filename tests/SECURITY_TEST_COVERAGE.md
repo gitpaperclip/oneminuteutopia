@@ -36,7 +36,7 @@ Validates rejection of malformed identifiers:
 Prevents unauthorized access to data from other sessions:
 - Session ownership enforcement in analysis retrieval
 - Foreign session ID rejection
-- TODO: Full `submitReport()` cross-session test (requires prepare-311 merge)
+- TODO: Full `submitReport()` cross-session test (requires Agent B report submission merge)
 
 **Coverage:**
 - `AnalysisStore.getOwned()` query includes `session_id` filter
@@ -152,21 +152,36 @@ npm run test:analysis -- tests/security-and-failures.test.mjs
 
 ## Integration with Other Agents
 
-### Dependencies on Agent B (prepare-311)
+### Dependencies on Agent B (Report Submission)
 - Full cross-session `submitReport()` test (currently marked TODO)
 - Database transaction locking verification
 - Analysis-to-report linking validation
 
 ### Safe for Agent C/D Integration
 - All tests use dependency injection and mocks
-- No conflicts with city upload or 311 routing features
+- No conflicts with other agent features (prepare-only, no API calls)
 - Tests validate contracts without implementation details
 
 ## Gaps Documented
 
 1. **Database-dependent tests:** 7 tests skip when database not configured (acceptable for test-only environments)
 2. **Full idempotency test:** Requires database setup to test concurrent submissions
-3. **Cross-session submit:** Awaits prepare-311 merge for complete verification
+3. **Cross-session submit:** Awaits Agent B report submission merge for complete verification
+
+## Important: Prepare-Only Scope
+
+**This testing covers the prepare/upload phase only.** No tests claim or verify:
+- Submission to Baltimore 311 API (API does not work per product owner)
+- Open311 integration
+- City portal API calls
+- "Submitted to city" status
+
+Tests focus on:
+- Session ownership and isolation
+- Secret redaction (API keys, session IDs, image data)
+- Emergency category handling (911-only scenarios)
+- Data integrity during prepare phase
+- Input validation and malicious input rejection
 
 ## Defects Found
 

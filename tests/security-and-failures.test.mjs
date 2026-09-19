@@ -117,9 +117,9 @@ test('AnalysisStore.getOwned enforces session ownership', async () => {
 });
 
 test('submitReport should fail when analysis_id belongs to a different session', async t => {
-  // When Agent B's prepare-311 changes are merged, this test should verify
+  // When Agent B's report submission changes are merged, this test should verify
   // that DatabaseService.submitReport checks session ownership
-  // TODO: Expand this test once prepare-311 is merged to verify the query
+  // TODO: Expand this test once Agent B's work is merged to verify the query
   // properly locks on session_id match
   
   const input = {
@@ -139,7 +139,7 @@ test('submitReport should fail when analysis_id belongs to a different session',
     assert.fail('Should reject submission for foreign session analysis');
   } catch (error) {
     if (error.message === 'Database is not configured') {
-      t.skip('Database not configured - test requires prepare-311 merge');
+      t.skip('Database not configured - test requires Agent B report submission merge');
       return;
     }
     assert.ok(error instanceof HttpError && error.status === 404, 'Should reject with 404 for foreign session');
@@ -396,7 +396,7 @@ test('submitReport returns existing report on duplicate submission attempt', asy
   // When an analysis already has a report_id, it should return the existing report
   
   // Note: This is an integration test that requires database setup
-  // Documenting expected behavior for when prepare-311 is merged
+  // Documenting expected behavior for when Agent B's report work is merged
   
   const input = {
     analysis_id: validAnalysisId,
@@ -409,7 +409,7 @@ test('submitReport returns existing report on duplicate submission attempt', asy
     location_address: '123 Test St',
   };
 
-  // TODO: Once prepare-311 is merged and database is accessible in tests:
+  // TODO: Once Agent B's report submission is merged and database is accessible in tests:
   // 1. Create a session
   // 2. Create an analysis with that session
   // 3. Submit once successfully
