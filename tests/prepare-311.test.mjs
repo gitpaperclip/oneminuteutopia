@@ -107,16 +107,19 @@ test('prepareReport uses stored routing fields for 311 disposition', async t => 
   const prepared = BaltimoreRoutingService.prepareReport(report);
   
   assert.equal(prepared.report_id, report.id);
-  assert.equal(prepared.readiness, 'ready');
+  assert.equal(prepared.readiness, 'choose_service'); // Multiple candidates
   assert.equal(prepared.routing_disposition, '311');
-  assert.deepEqual(prepared.service_request_types, ['TRM-Potholes', 'TRM-Pickup Pothole']);
-  assert.equal(prepared.instructions, null);
+  assert.equal(prepared.service_type, 'TRM-Potholes'); // First as primary
+  assert.deepEqual(prepared.alternative_service_types, ['TRM-Pickup Pothole']);
+  assert.equal(prepared.disclaimer, 'Prepared by One Minute Utopia. Review and submit through Baltimore 311.');
+  assert.ok(prepared.user_action);
+  assert.equal(prepared.user_action.label, 'Continue in Baltimore 311');
   
   assert.equal(prepared.prepared_fields.category, 'roads_and_sidewalks');
   assert.equal(prepared.prepared_fields.category_label, 'Roads and sidewalks');
   assert.equal(prepared.prepared_fields.incident_type, 'pothole');
   assert.equal(prepared.prepared_fields.description, 'Test hazard description');
-  assert.equal(prepared.prepared_fields.location_address, '100 Holliday St, Baltimore, MD 21202');
+  assert.equal(prepared.prepared_fields.location, '100 Holliday St, Baltimore, MD 21202');
   assert.equal(prepared.prepared_fields.latitude, 39.2904);
   assert.equal(prepared.prepared_fields.longitude, -76.6122);
   assert.equal(prepared.prepared_fields.seriousness, 5);
@@ -126,29 +129,32 @@ test('emergency disposition requires 911 first', async t => {
   const { report } = await setup(t, 'structure_fire', 9);
   const prepared = BaltimoreRoutingService.prepareReport(report);
   
-  assert.equal(prepared.readiness, 'emergency_first');
+  assert.equal(prepared.readiness, 'emergency');
   assert.equal(prepared.routing_disposition, 'emergency');
-  assert.deepEqual(prepared.service_request_types, []);
-  assert.ok(prepared.instructions.includes('911'));
-  assert.ok(prepared.instructions.includes('emergency'));
+  assert.equal(prepared.service_type, null);
+  assert.deepEqual(prepared.alternative_service_types, []);
+  assert.ok(prepared.user_action);
+  assert.equal(prepared.user_action.label, 'Call 911 immediately');
+  assert.equal(prepared.user_action.url, null); // No 311 URL for emergencies
 });
 
 test('manual_review disposition requires review', async t => {
   const { report } = await setup(t, 'unable_to_assess', 5);
   const prepared = BaltimoreRoutingService.prepareReport(report);
   
-  assert.equal(prepared.readiness, 'needs_review');
+  assert.equal(prepared.readiness, 'manual_review');
   assert.equal(prepared.routing_disposition, 'manual_review');
-  assert.ok(prepared.instructions);
+  assert.equal(prepared.user_action, null); // No specific action for manual review
 });
 
-test('no_submission disposition is insufficient_data', async t => {
+test('no_submission disposition is not_reportable', async t => {
   const { report } = await setup(t, 'no_visible_hazard', 0);
   const prepared = BaltimoreRoutingService.prepareReport(report);
   
-  assert.equal(prepared.readiness, 'insufficient_data');
+  assert.equal(prepared.readiness, 'not_reportable');
   assert.equal(prepared.routing_disposition, 'no_submission');
-  assert.deepEqual(prepared.service_request_types, []);
+  assert.equal(prepared.service_type, null);
+  assert.deepEqual(prepared.alternative_service_types, []);
 });
 
 test('endpoint authorization: 401 without session', async t => {
@@ -191,6 +197,7 @@ test('endpoint returns prepared report for owned session', async t => {
   assert.equal(result.status, 200);
   assert.equal(result.data.report_id, report.id);
   assert.equal(result.data.routing_disposition, '311');
+  assert.equal(result.data.disclaimer, 'Prepared by One Minute Utopia. Review and submit through Baltimore 311.');
   assert.ok(result.data.prepared_fields);
   assert.equal(result.data.prepared_fields.incident_type, 'pothole');
 });
@@ -211,9 +218,10 @@ test('endpoint ignores browser-supplied AI fields and uses stored DB values', as
   
   // Verify it used the updated DB values
   assert.equal(result.data.routing_disposition, 'manual_review');
-  assert.deepEqual(result.data.service_request_types, ['TRM-Street Repairs']);
-  assert.equal(result.data.readiness, 'needs_review');
+  assert.equal(result.data.service_type, 'TRM-Street Repairs');
+  assert.deepEqual(result.data.alternative_service_types, []);
+  assert.equal(result.data.readiness, 'manual_review');
   
   // Not the original values from the in-memory report object
-  assert.notDeepEqual(result.data.service_request_types, ['TRM-Potholes', 'TRM-Pickup Pothole']);
+  assert.notEqual(result.data.service_type, 'TRM-Potholes');
 });

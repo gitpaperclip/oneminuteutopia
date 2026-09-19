@@ -10,22 +10,29 @@ import { CATEGORY_LABELS } from './analysis-labels.ts';
  */
 export interface PreparedReport {
   report_id: string;
-  readiness: 'ready' | 'emergency_first' | 'needs_review' | 'insufficient_data';
+  readiness: 'ready' | 'choose_service' | 'needs_location' | 'manual_review' | 'emergency' | 'not_reportable';
   routing_disposition: '311' | 'manual_review' | 'emergency' | 'no_submission';
-  service_request_types: string[];
+  department: string | null;
+  service_type: string | null;
+  alternative_service_types: string[];
   prepared_fields: {
+    description: string | null;
+    location: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    photo_url: string;
     category: string;
     category_label: string;
     incident_type: string | null;
     context_summary: string | null;
-    description: string | null;
-    location_address: string | null;
-    latitude: number | null;
-    longitude: number | null;
     seriousness: number | null;
     created_at: number;
   };
-  instructions: string | null;
+  user_action: {
+    label: string;
+    url: string | null;
+  } | null;
+  disclaimer: string;
 }
 
 export class BaltimoreRoutingService {
@@ -41,55 +48,83 @@ export class BaltimoreRoutingService {
     const disposition = report.routing_disposition as '311' | 'manual_review' | 'emergency' | 'no_submission';
     const serviceCandidates = report.baltimore_service_candidates;
     
+    // Check for location data
+    const hasLocation = (report.latitude !== null && report.longitude !== null) || report.location_address !== null;
+    
     let readiness: PreparedReport['readiness'];
-    let instructions: string | null = null;
+    let serviceType: string | null = null;
+    let alternativeServices: string[] = [];
+    let userAction: PreparedReport['user_action'] = null;
 
     switch (disposition) {
       case 'emergency':
-        readiness = 'emergency_first';
-        instructions = 'This appears to be an emergency situation. Call 911 immediately. Do not use Baltimore 311 for emergencies.';
+        readiness = 'emergency';
+        userAction = {
+          label: 'Call 911 immediately',
+          url: null,
+        };
         break;
       case '311':
-        readiness = serviceCandidates.length > 0 ? 'ready' : 'needs_review';
-        if (serviceCandidates.length === 0) {
-          instructions = 'No specific service request types were identified. Review this information and contact Baltimore 311 directly for assistance.';
+        if (!hasLocation) {
+          readiness = 'needs_location';
+        } else if (serviceCandidates.length === 0) {
+          readiness = 'manual_review';
+        } else if (serviceCandidates.length === 1) {
+          readiness = 'ready';
+          serviceType = serviceCandidates[0];
+          userAction = {
+            label: 'Continue in Baltimore 311',
+            url: 'https://balt311.baltimorecity.gov/citizen/s/',
+          };
         } else {
-          instructions = 'Review this information before manually submitting to Baltimore 311. This app does not submit reports automatically.';
+          readiness = 'choose_service';
+          serviceType = serviceCandidates[0]; // First as primary recommendation
+          alternativeServices = serviceCandidates.slice(1);
+          userAction = {
+            label: 'Continue in Baltimore 311',
+            url: 'https://balt311.baltimorecity.gov/citizen/s/',
+          };
         }
         break;
       case 'manual_review':
-        readiness = 'needs_review';
-        instructions = serviceCandidates.length > 1
-          ? 'Multiple service types match this issue. Please review and select the most appropriate option before manually submitting to Baltimore 311.'
-          : 'This report requires review before manual submission to Baltimore 311. This app does not submit reports automatically.';
+        readiness = 'manual_review';
+        if (serviceCandidates.length > 0) {
+          serviceType = serviceCandidates[0];
+          alternativeServices = serviceCandidates.slice(1);
+        }
         break;
       case 'no_submission':
-        readiness = 'insufficient_data';
-        instructions = 'This issue type is not suitable for 311 submission. Contact Baltimore 311 directly if assistance is needed.';
+        readiness = 'not_reportable';
         break;
       default:
-        readiness = 'needs_review';
-        instructions = 'Unable to determine appropriate routing. Review this information and contact Baltimore 311 directly for assistance.';
+        readiness = 'manual_review';
     }
+
+    // Department extraction (not in stored data, would need mapping)
+    const department = null; // Baltimore catalog does not provide department mapping
 
     return {
       report_id: report.id,
       readiness,
       routing_disposition: disposition,
-      service_request_types: serviceCandidates,
+      department,
+      service_type: serviceType,
+      alternative_service_types: alternativeServices,
       prepared_fields: {
+        description: report.user_description,
+        location: report.location_address,
+        latitude: report.latitude,
+        longitude: report.longitude,
+        photo_url: report.image_path,
         category: report.category,
         category_label: CATEGORY_LABELS[report.category] || report.category,
         incident_type: report.incident_type,
         context_summary: report.context_summary,
-        description: report.user_description,
-        location_address: report.location_address,
-        latitude: report.latitude,
-        longitude: report.longitude,
         seriousness: report.seriousness,
         created_at: report.created_at,
       },
-      instructions,
+      user_action: userAction,
+      disclaimer: 'Prepared by One Minute Utopia. Review and submit through Baltimore 311.',
     };
   }
 }
