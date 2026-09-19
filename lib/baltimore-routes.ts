@@ -9,6 +9,8 @@ export interface HandoffLink {
   id: string;
   label: string;
   href: string;
+  /** Official public reporting/entry URL. Defaults to Baltimore 311 when a department has no dedicated form. */
+  reportUrl?: string;
   department?: string;
   note?: string;
   phones?: HandoffPhone[];
@@ -19,16 +21,20 @@ export const EXTREME_SERIOUSNESS = 9;
 /** Electricity/gas is treated as emergency when severity is High or worse. */
 export const ELECTRICITY_HIGH_SERIOUSNESS = 7;
 
+/** Baltimore 311 citizen service-request portal (stable public entry). */
+export const B311_REPORT_URL = 'https://balt311.baltimorecity.gov/citizen/s/';
+
 const B311: HandoffLink = {
   id: 'b311',
   label: 'Baltimore 311',
   department: 'Baltimore 311',
-  href: 'https://balt311.baltimorecity.gov/',
+  href: B311_REPORT_URL,
+  reportUrl: B311_REPORT_URL,
   phones: [
     { number: '311', label: 'Inside the city' },
-    { number: '410-396-5352', label: 'Outside the city' },
+    { number: '443-263-2220', label: 'Outside the city' },
   ],
-  note: 'Citywide non-emergency intake',
+  note: 'Citywide non-emergency intake. This app does not file with Baltimore City.',
 };
 
 const DPW_SOLID: HandoffLink = {
@@ -36,11 +42,12 @@ const DPW_SOLID: HandoffLink = {
   label: 'DPW Solid Waste',
   department: 'Baltimore City Department of Public Works',
   href: 'https://publicworks.baltimorecity.gov/',
+  reportUrl: B311_REPORT_URL,
   phones: [
     { number: '410-396-5134', label: 'Solid waste' },
     { number: '410-396-3310', label: 'Administration' },
   ],
-  note: 'Missed trash, dumping, and sanitation conditions',
+  note: 'Missed trash, dumping, and sanitation. File through Baltimore 311 — DPW has no separate public form.',
 };
 
 const DPW_WATER: HandoffLink = {
@@ -48,11 +55,13 @@ const DPW_WATER: HandoffLink = {
   label: 'DPW Water & Wastewater',
   department: 'Baltimore City Department of Public Works',
   href: 'https://publicworks.baltimorecity.gov/',
+  reportUrl: B311_REPORT_URL,
   phones: [
     { number: '410-396-3500', label: 'Water and wastewater' },
+    { number: '410-396-5352', label: 'Water emergencies' },
     { number: '410-396-3310', label: 'Administration' },
   ],
-  note: 'Main breaks, sewer backups, drainage, and flooding',
+  note: 'Main breaks, sewer backups, drainage, and flooding. File through Baltimore 311.',
 };
 
 const BCDOT: HandoffLink = {
@@ -60,15 +69,17 @@ const BCDOT: HandoffLink = {
   label: 'Dept. of Transportation',
   department: 'Baltimore City Department of Transportation',
   href: 'https://transportation.baltimorecity.gov/',
-  note: 'Potholes, signs, signals, and streetlights in the public right-of-way',
+  reportUrl: B311_REPORT_URL,
+  note: 'Potholes, signs, signals, and streetlights in the public right-of-way. File through Baltimore 311.',
 };
 
 const DHCD: HandoffLink = {
   id: 'dhcd',
   label: 'Housing / Code Enforcement',
   department: 'Baltimore City Department of Housing and Community Development',
-  href: 'https://dhcd.baltimorecity.gov/',
-  note: 'Vacant buildings, housing-code, and construction concerns',
+  href: 'https://www.baltimorecity.gov/dhcd/property-maintenance-and-code-enforcement',
+  reportUrl: B311_REPORT_URL,
+  note: 'Vacant buildings, housing-code, and construction concerns. File through Baltimore 311.',
 };
 
 const BCRP: HandoffLink = {
@@ -76,23 +87,27 @@ const BCRP: HandoffLink = {
   label: 'Recreation & Parks',
   department: 'Baltimore City Recreation and Parks',
   href: 'https://bcrp.baltimorecity.gov/',
-  note: 'Parks, playgrounds, trails, and park trees',
+  reportUrl: B311_REPORT_URL,
+  note: 'Parks, playgrounds, trails, and park trees. File through Baltimore 311.',
 };
 
 const BCHD: HandoffLink = {
   id: 'bchd',
   label: 'Health Department',
   department: 'Baltimore City Health Department',
-  href: 'https://health.baltimorecity.gov/',
-  note: 'Animal-control and environmental health complaints',
+  href: 'https://www.baltimorecity.gov/health/our-work/animal-services',
+  reportUrl: B311_REPORT_URL,
+  note: 'Animal-control and environmental health complaints. File through Baltimore 311.',
 };
 
 const BCFD: HandoffLink = {
   id: 'bcfd',
   label: 'Fire Department',
   department: 'Baltimore City Fire Department',
-  href: 'https://fire.baltimorecity.gov/',
-  note: 'Non-emergency only — call 911 if there is immediate danger',
+  href: 'https://www.baltimorecity.gov/fire',
+  reportUrl: B311_REPORT_URL,
+  phones: [{ number: '410-396-5680', label: 'Non-emergency contact' }],
+  note: 'Non-emergency only — call 911 if there is immediate danger. File through Baltimore 311.',
 };
 
 const BPD: HandoffLink = {
@@ -100,6 +115,7 @@ const BPD: HandoffLink = {
   label: 'Baltimore Police',
   department: 'Baltimore Police Department',
   href: 'https://www.baltimorepolice.org/file-police-report',
+  reportUrl: 'https://www.baltimorepolice.org/file-police-report',
   phones: [{ number: '410-637-8875', label: 'Telephone Reporting Unit' }],
   note: 'Eligible non-emergency reports only. Call 911 if there is immediate danger.',
 };
@@ -108,7 +124,12 @@ const BGE: HandoffLink = {
   id: 'bge',
   label: 'BGE',
   department: 'Baltimore Gas and Electric',
-  href: 'https://www.bge.com/',
+  href: 'https://www.bge.com/outages-and-safety',
+  reportUrl: 'https://secure.bge.com/powerOutages/',
+  phones: [
+    { number: '877-778-2222', label: 'Outage / downed line' },
+    { number: '800-685-0123', label: 'Gas odor' },
+  ],
   note: 'Downed lines, outages, and gas odor. Call 911 if there is immediate danger. Do not approach a downed line.',
 };
 
@@ -167,6 +188,20 @@ export function handoffsForCategory(category: string): HandoffLink[] {
 export function likelyDepartmentName(category: string): string | null {
   const department = handoffsForCategory(category).find((link) => link.id !== '911');
   return department?.department ?? department?.label ?? null;
+}
+
+export function reportUrlForLink(link: HandoffLink): string {
+  if (link.reportUrl) return link.reportUrl;
+  if (link.href.startsWith('http')) return link.href;
+  return B311_REPORT_URL;
+}
+
+/** Official public reporting/entry page for the likely agency (311 fallback when no dedicated form). */
+export function agencyReportLink(category: string): HandoffLink {
+  const preferred =
+    handoffsForCategory(category).find((link) => link.id !== '911') ?? B311;
+  const href = reportUrlForLink(preferred);
+  return { ...preferred, href, reportUrl: href };
 }
 
 export function primaryHandoff(category: string, seriousness?: number | null): HandoffLink {
