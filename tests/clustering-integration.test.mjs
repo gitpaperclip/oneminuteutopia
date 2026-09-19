@@ -5,7 +5,12 @@ import { PGlite } from '@electric-sql/pglite';
 import { DatabaseService } from '../lib/db.ts';
 import { validateReportInput } from '../lib/report-input.ts';
 
-const migrations = await Promise.all(['202609190000_reporting.sql', '202609190001_image_analyses.sql'].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
+const migrations = await Promise.all([
+  '202609190000_reporting.sql',
+  '202609190001_image_analyses.sql',
+  '202609190002_incident_context_and_clustering.sql',
+  '202609190003_baltimore_311_routing.sql'
+].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Run production tagged SQL against an isolated PostgreSQL engine, including its real transactions.
 function connect(db) {
@@ -25,8 +30,11 @@ async function setup(t, analysisId = '11111111-1111-4111-8111-111111111111', cat
   for (const migration of migrations) await db.exec(migration);
   t.mock.method(DatabaseService, 'getConnection', () => connect(db));
   const session = await DatabaseService.createSession();
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo.jpg','saved-hash',$3,6,81,'gemini-test','1')`, [analysisId, session, category]);
+  const incidentType = category === 'roads_and_sidewalks' ? 'roads_and_sidewalks_unspecified' :
+    category === 'trash_and_sanitation' ? 'trash_and_sanitation_unspecified' : `${category}_unspecified`;
+  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type, context_summary, seriousness, ai_confidence, model, prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo.jpg','saved-hash',$3,$4,'Test image',$5,$6,'gemini-test','1')`, 
+    [analysisId, session, category, incidentType, 6, 81]);
   return { db, session };
 }
 
@@ -50,8 +58,8 @@ test('two nearby same-type reports within 72h cluster into one incident with two
   
   // Create second analysis for same session
   const analysis2Id = '22222222-2222-4222-8222-222222222222';
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks',7,85,'gemini-test','1')`, [analysis2Id, session]);
+  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type, context_summary, seriousness, ai_confidence, model, prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks','roads_and_sidewalks_unspecified','Test image',7,85,'gemini-test','1')`, [analysis2Id, session]);
   
   // Create second report ~100m away (within 150m threshold) and same category
   const input2 = {
@@ -105,8 +113,8 @@ test('reports with different categories do not cluster', async t => {
   
   // Create second analysis with different category
   const analysis2Id = '22222222-2222-4222-8222-222222222222';
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','trash_and_sanitation',5,80,'gemini-test','1')`, [analysis2Id, session]);
+  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type, context_summary, seriousness, ai_confidence, model, prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','trash_and_sanitation','trash_and_sanitation_unspecified','Test image',5,80,'gemini-test','1')`, [analysis2Id, session]);
   
   const input2 = {
     analysis_id: analysis2Id,
@@ -145,8 +153,8 @@ test('reports more than 150m apart do not cluster', async t => {
   const { report: report1 } = await DatabaseService.submitReport(session, validateReportInput(input1));
   
   const analysis2Id = '22222222-2222-4222-8222-222222222222';
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks',6,82,'gemini-test','1')`, [analysis2Id, session]);
+  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type, context_summary, seriousness, ai_confidence, model, prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks','roads_and_sidewalks_unspecified','Test image',6,82,'gemini-test','1')`, [analysis2Id, session]);
   
   // ~200m away (0.002 degrees longitude ≈ 200m)
   const input2 = {
@@ -188,12 +196,12 @@ test('reports more than 72h apart do not cluster', async t => {
   
   // Age the first incident by 73 hours
   const seventyThreeHoursMs = 73 * 60 * 60 * 1000;
-  await db.query('UPDATE incidents SET created_at = created_at - $1 WHERE id = $2', [seventyThreeHoursMs, incident1Id]);
+  await db.query('UPDATE incidents SET created_at = created_at - $1, updated_at = updated_at - $1 WHERE id = $2', [seventyThreeHoursMs, incident1Id]);
   await db.query('UPDATE reports SET created_at = created_at - $1 WHERE id = $2', [seventyThreeHoursMs, report1.id]);
   
   const analysis2Id = '22222222-2222-4222-8222-222222222222';
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks',6,82,'gemini-test','1')`, [analysis2Id, session]);
+  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type, context_summary, seriousness, ai_confidence, model, prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks','roads_and_sidewalks_unspecified','Test image',6,82,'gemini-test','1')`, [analysis2Id, session]);
   
   const input2 = {
     analysis_id: analysis2Id,
@@ -233,8 +241,8 @@ test('reports without location coordinates do not cluster', async t => {
   const { report: report1 } = await DatabaseService.submitReport(session, validateReportInput(input1));
   
   const analysis2Id = '22222222-2222-4222-8222-222222222222';
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks',6,82,'gemini-test','1')`, [analysis2Id, session]);
+  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type, context_summary, seriousness, ai_confidence, model, prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks','roads_and_sidewalks_unspecified','Test image',6,82,'gemini-test','1')`, [analysis2Id, session]);
   
   // Second report with manual location (no coordinates)
   const input2 = {
@@ -270,8 +278,8 @@ test('three reports cluster correctly into one incident', async t => {
   
   for (let i = 0; i < 3; i++) {
     if (i > 0) {
-      await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-        VALUES ($1,$2,$3,$4,'roads_and_sidewalks',6,81,'gemini-test','1')`, [analysisIds[i], session, `https://storage.example/photo${i}.jpg`, `saved-hash-${i}`]);
+      await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type, context_summary, seriousness, ai_confidence, model, prompt_version)
+        VALUES ($1,$2,$3,$4,'roads_and_sidewalks','roads_and_sidewalks_unspecified','Test image',6,81,'gemini-test','1')`, [analysisIds[i], session, `https://storage.example/photo${i}.jpg`, `saved-hash-${i}`]);
     }
     
     const input = {
@@ -302,7 +310,7 @@ test('three reports cluster correctly into one incident', async t => {
   assert.equal(allIncidents.rows[0].n, 1, 'Should have created only one incident');
 });
 
-test('clustered incident location uses first report coordinates', async t => {
+test('clustered incident coordinates are averaged from all reports', async t => {
   const { db, session } = await setup(t);
   
   const input1 = {
@@ -319,8 +327,8 @@ test('clustered incident location uses first report coordinates', async t => {
   const { report: report1 } = await DatabaseService.submitReport(session, validateReportInput(input1));
   
   const analysis2Id = '22222222-2222-4222-8222-222222222222';
-  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, seriousness, ai_confidence, model, prompt_version)
-    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks',6,82,'gemini-test','1')`, [analysis2Id, session]);
+  await db.query(`INSERT INTO image_analyses (id, session_id, image_path, image_hash, category, incident_type, context_summary, seriousness, ai_confidence, model, prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo2.jpg','saved-hash-2','roads_and_sidewalks','roads_and_sidewalks_unspecified','Test image',6,82,'gemini-test','1')`, [analysis2Id, session]);
   
   const input2 = {
     analysis_id: analysis2Id,
@@ -335,9 +343,12 @@ test('clustered incident location uses first report coordinates', async t => {
   
   await DatabaseService.submitReport(session, validateReportInput(input2));
   
-  // Incident should use first report's location
+  // Incident coordinates should be averaged between the two reports
   const incident = await db.query('SELECT * FROM incidents WHERE id = $1', [report1.incident_id]);
-  assert.equal(incident.rows[0].latitude, 39.29, 'Incident latitude should match first report');
-  assert.equal(incident.rows[0].longitude, -76.61, 'Incident longitude should match first report');
+  const expectedLat = (39.29 + 39.2905) / 2; // Average of two latitudes
+  const expectedLon = (-76.61 + -76.6095) / 2; // Average of two longitudes
+  assert.ok(Math.abs(incident.rows[0].latitude - expectedLat) < 0.0001, 'Incident latitude should be average of reports');
+  assert.ok(Math.abs(incident.rows[0].longitude - expectedLon) < 0.0001, 'Incident longitude should be average of reports');
+  // Address keeps the first report's address
   assert.equal(incident.rows[0].location_address, 'Main St at 1st Ave', 'Incident address should match first report');
 });
