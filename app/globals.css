@@ -349,7 +349,21 @@ body {
 .receipt-status p:last-child { margin-bottom: 0; }
 .receipt-status .receipt-id { margin-top: 8px; }
 .receipt-911 { margin: 0 0 20px; }
+.receipt-section { margin: 0 0 20px; }
 .receipt-section h2 { margin: 0 0 8px; font-size: 15px; font-weight: 750; color: var(--charcoal); }
+.packet-meta { margin: 0 0 8px; font-size: 13px; font-weight: 650; color: var(--fg); }
+.packet-body {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f9fafb;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fg);
+}
 .handoff-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 .handoff-card {
   border: 1px solid var(--line);

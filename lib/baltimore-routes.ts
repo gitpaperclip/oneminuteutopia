@@ -28,7 +28,7 @@ const B311: HandoffLink = {
     { number: '311', label: 'Inside the city' },
     { number: '410-396-5352', label: 'Outside the city' },
   ],
-  note: 'Citywide non-emergency intake. This app does not send reports to 311 for you.',
+  note: 'Citywide non-emergency intake',
 };
 
 const DPW_SOLID: HandoffLink = {
@@ -84,7 +84,7 @@ const BCHD: HandoffLink = {
   label: 'Health Department',
   department: 'Baltimore City Health Department',
   href: 'https://health.baltimorecity.gov/',
-  note: 'Start with 311 for animal-control intake and environmental health complaints',
+  note: 'Animal-control and environmental health complaints',
 };
 
 const BCFD: HandoffLink = {

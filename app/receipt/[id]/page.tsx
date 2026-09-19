@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DatabaseService, type Incident } from '@/lib/db';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
+import { BaltimoreRoutingService } from '@/lib/baltimore-routing';
 import {
   handoffsForCategory,
   isEmergencyHandoff,
@@ -59,6 +60,10 @@ function mockPortalCopy(incident: Incident | undefined) {
   };
 }
 
+function serviceLabel(code: string): string {
+  return code.replace(/^[A-Z]+-/, '').replace(/-/g, ' ');
+}
+
 function HandoffItem({ link }: { link: HandoffLink }) {
   const isTel = link.href.startsWith('tel:');
   const title = link.department || link.label;
@@ -84,7 +89,7 @@ function HandoffItem({ link }: { link: HandoffLink }) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Open portal
+            Website
           </a>
         )}
       </article>
@@ -108,10 +113,18 @@ export default async function ReceiptPage({
     ? await DatabaseService.getIncident(report.incident_id)
     : undefined;
   const category = cat || report.category;
-  const links = handoffsForCategory(category);
-  const emergency = isEmergencyHandoff(category, report.seriousness);
+  const prepared = BaltimoreRoutingService.prepareReport(report);
+  const emergency =
+    prepared.readiness === 'emergency' || isEmergencyHandoff(category, report.seriousness);
   const label = CATEGORY_LABELS[category] || category.replaceAll('_', ' ');
-  const followUp = links.filter((link) => link.id !== '911');
+  const contacts = handoffsForCategory(category).filter((link) => link.id !== '911');
+  const description =
+    typeof prepared.prepared_fields?.description === 'string'
+      ? prepared.prepared_fields.description
+      : '';
+  const showPacket = !emergency && prepared.readiness !== 'not_reportable';
+  const services = prepared.service_options?.map((option) => option.service_name)
+    ?? (prepared.service_code ? [serviceLabel(prepared.service_code)] : []);
   const evidenceCount = incident?.evidence_count ?? 1;
   const mock = mockPortalCopy(incident);
 
@@ -130,9 +143,7 @@ export default async function ReceiptPage({
           <a className="btn btn-emergency btn-block" href="tel:911">
             Contact 911
           </a>
-          <p className="receipt-note">
-            Call now if anyone is in danger. This app does not contact 911 or the city for you.
-          </p>
+          <p className="receipt-note">Call now if anyone is in danger.</p>
         </section>
       ) : null}
 
@@ -147,15 +158,26 @@ export default async function ReceiptPage({
         ) : null}
       </section>
 
-      <section className="receipt-section" aria-label="Suggested next steps">
-        <h2>{emergency ? 'After you are safe' : 'Report this yourself'}</h2>
-        <p className="receipt-note">Confirm the destination and send it yourself — we do not send this for you.</p>
-        <ul className="handoff-list">
-          {(emergency ? followUp : links).map((link) => (
-            <HandoffItem key={link.id} link={link} />
-          ))}
-        </ul>
-      </section>
+      {showPacket ? (
+        <section className="receipt-section" aria-label="311 packet">
+          <h2>311 packet</h2>
+          {services.length ? (
+            <p className="packet-meta">{services.join(' · ')}</p>
+          ) : null}
+          {description ? <pre className="packet-body">{description}</pre> : null}
+        </section>
+      ) : null}
+
+      {contacts.length ? (
+        <section className="receipt-section" aria-label="Contacts">
+          <h2>{emergency ? 'After you are safe' : 'Contacts'}</h2>
+          <ul className="handoff-list">
+            {contacts.map((link) => (
+              <HandoffItem key={link.id} link={link} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <p className="receipt-actions">
         <Link href="/" className="btn btn-primary btn-block">

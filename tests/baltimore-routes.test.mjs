@@ -69,8 +69,9 @@ test('telHref builds dialable hrefs for short codes and local numbers', () => {
   assert.equal(telHref('410-396-5352'), 'tel:4103965352');
 });
 
-test('handoff copy never claims the app submitted to the city', () => {
-  const forbidden = /submitted to (the )?city|sent to (the )?city|we (have )?submitted|open311/i;
+test('handoff copy stays informational and never claims a city filing', () => {
+  const forbidden =
+    /submitted to (the )?city|sent to (the )?city|we (have )?submitted|open311|send it yourself|file this yourself|does not send reports to 311 for you/i;
   for (const category of [
     'roads_and_sidewalks',
     'trash_and_sanitation',

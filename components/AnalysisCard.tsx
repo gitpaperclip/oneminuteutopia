@@ -50,9 +50,7 @@ export function AnalysisCard({
             <a className="btn btn-emergency btn-block" href="tel:911">
               Contact 911
             </a>
-            <p className="analysis-911-note">
-              Call now if anyone is in danger. This app does not contact 911 or the city for you.
-            </p>
+            <p className="analysis-911-note">Call now if anyone is in danger.</p>
           </div>
         ) : null}
         <button type="button" className="btn btn-primary btn-block" onClick={onContinue}>
