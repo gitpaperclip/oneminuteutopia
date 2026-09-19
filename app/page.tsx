@@ -7,7 +7,19 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnalysisCard } from '@/components/AnalysisCard';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
-import { CATEGORY_OPTIONS } from '@/lib/baltimore-routes';
+import {
+  CATEGORY_OPTIONS,
+  agencyReportingCopy,
+  isEmergencyHandoff,
+} from '@/lib/baltimore-routes';
+import {
+  applyTrackZoom,
+  currentTrackZoom,
+  pinchDistance,
+  zoomFromPinch,
+  zoomRangeFromTrack,
+} from '@/lib/camera-zoom';
+import { captureVisibleVideo, screenOrientationAngle } from '@/lib/capture-frame';
 import { prepareReportImage } from '@/lib/image-client';
 import { groupKeyFromReport } from '@/lib/incident-groups';
 
@@ -64,10 +76,18 @@ export default function HomePage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const bleedRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const pendingFile = useRef<File | null>(null);
   const uploadAbort = useRef<AbortController | null>(null);
   const gen = useRef(0);
+  const pinchRef = useRef({
+    startDistance: 0,
+    startZoom: 1,
+    zoom: 1,
+    min: 1,
+    max: 1,
+  });
 
   const [step, setStep] = useState<Step>('capture');
   const [capturePhase, setCapturePhase] = useState<CapturePhase>('live');
@@ -140,6 +160,13 @@ export default function HomePage() {
       }
       stopTracks(streamRef.current);
       streamRef.current = stream;
+      const track = stream.getVideoTracks()[0] ?? null;
+      const range = zoomRangeFromTrack(track);
+      pinchRef.current.min = range?.min ?? 1;
+      pinchRef.current.max = range?.max ?? 1;
+      pinchRef.current.zoom = currentTrackZoom(track, range?.min ?? 1);
+      pinchRef.current.startZoom = pinchRef.current.zoom;
+      pinchRef.current.startDistance = 0;
       setError(null);
       setCameraDenied(false);
       setCameraOn(true);
@@ -170,6 +197,78 @@ export default function HomePage() {
     if (video.srcObject !== stream) video.srcObject = stream;
     if (!preview) void video.play().catch(() => undefined);
   }, [cameraOn, preview, step]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return;
+    const stage = new URLSearchParams(window.location.search).get('ui');
+    if (stage !== 'analysis' && stage !== 'analysis-emergency' && stage !== 'confirm') return;
+    let cancelled = false;
+    void fetch('/logo-mark.png')
+      .then((res) => res.blob())
+      .then((blob) => {
+        if (cancelled) return;
+        const emergency = stage === 'analysis-emergency';
+        replacePreview(URL.createObjectURL(blob));
+        setUpload({
+          analysis_id: 'ui-preview',
+          analysis_status: 'complete',
+          analysis: {
+            category: emergency ? 'fire_injury_or_immediate_threat' : 'roads_and_sidewalks',
+            seriousness: emergency ? 10 : 6,
+            ai_confidence: 80,
+          },
+        });
+        setCategory(emergency ? 'fire_injury_or_immediate_threat' : 'roads_and_sidewalks');
+        if (stage === 'confirm') {
+          setGps({ latitude: 39.2904, longitude: -76.6122, accuracy: 12 });
+          setLocMode('gps');
+        }
+        setStep(stage === 'confirm' ? 'confirm' : 'analysis');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [replacePreview]);
+
+  useEffect(() => {
+    const el = bleedRef.current;
+    if (!el || step !== 'capture') return;
+    const prevent = (event: Event) => event.preventDefault();
+    const onStart = (event: TouchEvent) => {
+      if (event.touches.length < 2) return;
+      event.preventDefault();
+      pinchRef.current.startDistance = pinchDistance(event.touches[0], event.touches[1]);
+      pinchRef.current.startZoom = pinchRef.current.zoom;
+    };
+    const onMove = (event: TouchEvent) => {
+      if (event.touches.length < 2) return;
+      event.preventDefault();
+      if (capturePhase !== 'live') return;
+      const track = streamRef.current?.getVideoTracks()[0] ?? null;
+      const range = zoomRangeFromTrack(track);
+      if (!range || pinchRef.current.startDistance <= 0) return;
+      const next = zoomFromPinch(
+        pinchRef.current.startZoom,
+        pinchRef.current.startDistance,
+        pinchDistance(event.touches[0], event.touches[1]),
+        range,
+      );
+      pinchRef.current.zoom = next;
+      if (track) void applyTrackZoom(track, next);
+    };
+    el.addEventListener('touchstart', onStart, { passive: false });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('gesturestart', prevent, { passive: false });
+    el.addEventListener('gesturechange', prevent, { passive: false });
+    el.addEventListener('gestureend', prevent, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('gesturestart', prevent);
+      el.removeEventListener('gesturechange', prevent);
+      el.removeEventListener('gestureend', prevent);
+    };
+  }, [step, cameraOn, capturePhase]);
 
   const beginReview = useCallback(
     (file: File) => {
@@ -245,16 +344,15 @@ export default function HomePage() {
   const shutter = async () => {
     const video = videoRef.current;
     if (!video?.videoWidth || capturePhase !== 'live') return;
-    const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
+    const angle = screenOrientationAngle(
+      typeof screen !== 'undefined' ? screen.orientation : null,
+      typeof window !== 'undefined' ? (window as Window & { orientation?: number }).orientation : undefined,
+    );
+    const canvas = captureVisibleVideo(video, 1600, angle);
+    if (!canvas) {
       setError('Capture failed. Upload instead.');
       return;
     }
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.85));
     if (!blob) {
       setError('Capture failed. Upload instead.');
@@ -319,6 +417,10 @@ export default function HomePage() {
     category !== 'unable_to_assess' &&
     (locMode === 'gps' ? !!gps : address.trim().length > 0);
 
+  const reporting = upload ? agencyReportingCopy(upload.analysis.category) : null;
+  const emergency =
+    !!upload && isEmergencyHandoff(upload.analysis.category, upload.analysis.seriousness);
+
   const submit = async () => {
     if (!upload || !canSubmit || submitting) return;
     setSubmitting(true);
@@ -367,7 +469,7 @@ export default function HomePage() {
       {step === 'capture' && (
         <section className="capture-stage" aria-label="Capture">
           <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
-          <div className="camera-bleed">
+          <div className="camera-bleed" ref={bleedRef}>
             <video
               ref={videoRef}
               className={preview ? 'camera-video is-hidden' : 'camera-video'}
@@ -489,22 +591,42 @@ export default function HomePage() {
             </button>
           </header>
           <div className="analysis-page-body">
-            {upload.analysis_status === 'unavailable' && (
-              <p className="toast-warn toast-warn-inline">
-                {upload.warning || 'Assessment unavailable — pick a category next.'}
-              </p>
-            )}
-            <AnalysisCard
-              category={upload.analysis.category}
-              seriousness={upload.analysis.seriousness}
-              onContinue={() => {
-                setError(null);
-                setLeaveOpen(false);
-                setStep('confirm');
-                requestGps();
-              }}
-            />
-            <img src={preview} alt="" className="analysis-thumb" />
+            <div className="analysis-stack">
+              {upload.analysis_status === 'unavailable' && (
+                <p className="toast-warn toast-warn-inline">
+                  {upload.warning || 'Assessment unavailable — pick a category next.'}
+                </p>
+              )}
+              <AnalysisCard
+                category={upload.analysis.category}
+                seriousness={upload.analysis.seriousness}
+                onContinue={() => {
+                  setError(null);
+                  setLeaveOpen(false);
+                  setStep('confirm');
+                  requestGps();
+                }}
+              />
+              {reporting ? (
+                <a
+                  className="agency-chip"
+                  href={reporting.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {reporting.label}
+                </a>
+              ) : null}
+              {emergency ? (
+                <div className="danger-banner" role="alert">
+                  <p>Dangerous environment, please move to safety and contact 911</p>
+                  <a className="btn btn-emergency btn-block" href="tel:911">
+                    Contact 911
+                  </a>
+                </div>
+              ) : null}
+              <img src={preview} alt="" className="analysis-thumb" />
+            </div>
           </div>
         </section>
       )}

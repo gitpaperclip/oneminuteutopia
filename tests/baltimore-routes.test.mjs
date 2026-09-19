@@ -6,6 +6,7 @@ import {
   ELECTRICITY_HIGH_SERIOUSNESS,
   EXTREME_SERIOUSNESS,
   agencyReportLink,
+  agencyReportingCopy,
   handoffsForCategory,
   isEmergencyHandoff,
   likelyDepartmentName,
@@ -87,6 +88,16 @@ test('each category maps to an https public report URL', () => {
   assert.equal(agencyReportLink('fire_injury_or_immediate_threat').id, 'bcfd');
   assert.equal(agencyReportLink('fire_injury_or_immediate_threat').href, B311_REPORT_URL);
   assert.equal(handoffsForCategory('fire_injury_or_immediate_threat').find((l) => l.id === 'bpd')?.reportUrl, 'https://www.baltimorepolice.org/file-police-report');
+});
+
+test('analysis reporting chip uses catalog agency names and reporting, not report', () => {
+  const roads = agencyReportingCopy('roads_and_sidewalks');
+  assert.equal(roads.href, B311_REPORT_URL);
+  assert.equal(roads.label, 'Open Baltimore City Department of Transportation reporting');
+  assert.equal(/ report$/.test(roads.label), false);
+  const fire = agencyReportingCopy('fire_injury_or_immediate_threat');
+  assert.equal(fire.label, 'Open Baltimore City Fire Department reporting');
+  assert.match(fire.href, /^https:\/\//);
 });
 
 test('handoff copy stays informational and never claims a city filing', () => {

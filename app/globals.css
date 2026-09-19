@@ -58,7 +58,7 @@ body {
   overflow: hidden;
   background: #000;
   color: #fff;
-  touch-action: manipulation;
+  touch-action: none;
 }
 
 .camera-bleed {
@@ -66,10 +66,12 @@ body {
   inset: 0;
   background: #000;
   overflow: hidden;
+  touch-action: none;
 }
 
 .camera-video,
 .camera-still {
+  touch-action: none;
   position: absolute;
   inset: 0;
   width: 100%;
@@ -284,36 +286,36 @@ body {
 .analysis-score-den { font-size: 14px; font-weight: 600; opacity: .75; }
 .analysis-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; max-width: 62%; }
 .analysis-tone { font-weight: 700; font-size: 14px; }
-.analysis-likely {
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 550;
-  text-align: right;
-  line-height: 1.3;
-}
 .agency-chip {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 0 14px;
-  padding: 8px 12px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--sev-accent, var(--blue)) 45%, var(--line));
+  border: 1px solid var(--line);
   background: #fff;
   color: var(--blue);
   font-size: 13px;
   font-weight: 700;
   text-decoration: none;
-  line-height: 1.2;
+  line-height: 1.3;
+  text-align: center;
 }
 .agency-chip:hover { background: var(--blue-soft); }
-.analysis-emergency { margin-bottom: 10px; }
-.analysis-911-note {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.35;
+.danger-banner {
+  border-radius: 14px;
+  padding: 14px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+.danger-banner p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 650;
   color: #7f1d1d;
-  font-weight: 500;
+  line-height: 1.4;
 }
 
 .page-header {
@@ -340,8 +342,15 @@ body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
   padding: 8px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+}
+.analysis-stack {
+  width: 100%;
+  max-width: 360px;
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 .analysis-thumb {
   width: 100%;
