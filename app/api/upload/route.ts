@@ -8,6 +8,29 @@ const uploadRateLimit = new Map<string, { count: number; resetTime: number }>();
 
 const MAX_UPLOADS_PER_HOUR = 10;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const SUPPORTED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+]);
+
+function getImageMimeType(file: File) {
+  const declaredType = file.type.toLowerCase();
+  if (SUPPORTED_IMAGE_TYPES.has(declaredType)) return declaredType;
+
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  const inferredTypes: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
+  };
+  return extension ? inferredTypes[extension] : undefined;
+}
 
 function checkRateLimit(sessionId: string): boolean {
   const now = Date.now();
@@ -44,9 +67,9 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
-    const file = formData.get('image') as File;
+    const file = formData.get('image');
 
-    if (!file) {
+    if (!(file instanceof File)) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
@@ -58,10 +81,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
+    const mimeType = getImageMimeType(file);
+    if (!mimeType) {
       return NextResponse.json(
-        { error: 'Invalid file type. Please upload an image.' },
+        { error: 'Unsupported image. Use JPEG, PNG, WebP, HEIC, or HEIF.' },
         { status: 400 }
       );
     }
@@ -69,10 +92,10 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(await file.arrayBuffer());
 
     // Save image
-    const { path: imagePath, hash } = await StorageService.saveImage(buffer, file.type);
+    const { path: imagePath, hash } = await StorageService.saveImage(buffer, mimeType);
 
     // Analyze image with Gemini
-    const analysis = await GeminiService.analyzeImage(buffer, file.type);
+    const analysis = await GeminiService.analyzeImage(buffer, mimeType);
 
     return NextResponse.json({
       success: true,

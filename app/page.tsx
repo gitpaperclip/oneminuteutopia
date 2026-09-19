@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+/* eslint-disable @next/next/no-img-element -- previews use local object URLs, which next/image cannot optimize */
+
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { nanoid } from 'nanoid';
 
@@ -28,10 +30,144 @@ interface Location {
   address?: string;
 }
 
+const MAX_SOURCE_IMAGE_BYTES = 25 * 1024 * 1024;
+const MAX_BROWSER_UPLOAD_BYTES = 3.5 * 1024 * 1024;
+const MAX_IMAGE_DIMENSION = 2048;
+
+function stopMediaStream(stream: MediaStream | null) {
+  stream?.getTracks().forEach((track) => track.stop());
+}
+
+function waitForVideoMetadata(video: HTMLVideoElement, timeoutMs = 10000) {
+  if (video.readyState >= HTMLMediaElement.HAVE_METADATA && video.videoWidth > 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      video.removeEventListener('loadedmetadata', handleReady);
+      video.removeEventListener('canplay', handleReady);
+      video.removeEventListener('error', handleError);
+    };
+    const handleReady = () => {
+      if (video.videoWidth === 0 || video.videoHeight === 0) return;
+      cleanup();
+      resolve();
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error('The browser could not play the camera stream.'));
+    };
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Camera preview timed out.'));
+    }, timeoutMs);
+
+    video.addEventListener('loadedmetadata', handleReady);
+    video.addEventListener('canplay', handleReady);
+    video.addEventListener('error', handleError);
+  });
+}
+
+function getCameraErrorMessage(error: unknown) {
+  if (error instanceof DOMException) {
+    if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
+      return 'Camera permission was blocked. Allow camera access in your browser settings, or upload a photo.';
+    }
+    if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+      return 'No camera was found on this device. You can upload a photo instead.';
+    }
+    if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+      return 'The camera is being used by another app. Close it there and try again, or upload a photo.';
+    }
+    if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
+      return 'This camera does not support the requested settings. Try again or upload a photo.';
+    }
+  }
+
+  return 'Unable to start the camera. Check browser permissions, then try again or upload a photo.';
+}
+
+function loadImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('This image format cannot be previewed by your browser.'));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function normalizeImageForUpload(file: File) {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Choose an image file such as JPEG, PNG, WebP, HEIC, or HEIF.');
+  }
+  if (file.size === 0) {
+    throw new Error('The selected image is empty. Choose another photo.');
+  }
+  if (file.size > MAX_SOURCE_IMAGE_BYTES) {
+    throw new Error('The selected image is too large. Choose a photo smaller than 25 MB.');
+  }
+
+  // Camera captures are already sized for upload and do not need another lossy pass.
+  if (file.type === 'image/jpeg' && file.size <= MAX_BROWSER_UPLOAD_BYTES) {
+    return file;
+  }
+
+  try {
+    const image = await loadImage(file);
+    const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+    const scale = Math.min(1, MAX_IMAGE_DIMENSION / longestSide);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error('Image conversion is unavailable in this browser.');
+    }
+
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    let quality = 0.86;
+    let blob: Blob | null = null;
+    do {
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+      quality -= 0.12;
+    } while (blob && blob.size > MAX_BROWSER_UPLOAD_BYTES && quality >= 0.5);
+
+    if (!blob || blob.size > MAX_BROWSER_UPLOAD_BYTES) {
+      throw new Error('The image could not be reduced to a safe upload size.');
+    }
+
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'photo';
+    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } catch (error) {
+    // Gemini accepts HEIC/HEIF. Preserve a small original if the browser cannot
+    // decode it locally; the review screen will show a filename fallback.
+    if (file.size <= MAX_BROWSER_UPLOAD_BYTES) {
+      return file;
+    }
+    throw error;
+  }
+}
+
 export default function ReportPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraRequestIdRef = useRef(0);
   
   const [step, setStep] = useState<'capture' | 'review' | 'submitting'>('capture');
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -50,98 +186,10 @@ export default function ReportPage() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [isCameraLoading, setIsCameraLoading] = useState(false);
-  const [pendingStream, setPendingStream] = useState<MediaStream | null>(null);
+  const [previewUnavailable, setPreviewUnavailable] = useState(false);
 
   useEffect(() => {
-    // Request location on mount
-    requestLocation();
-  }, []);
-
-  useEffect(() => {
-    // Cleanup camera stream on unmount
-    return () => {
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [cameraStream]);
-
-  useEffect(() => {
-    // Cleanup pending stream if component unmounts or camera is cancelled
-    return () => {
-      if (pendingStream) {
-        pendingStream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [pendingStream]);
-
-  useEffect(() => {
-    // Attach pending stream to video element once it mounts
-    const attachStream = async () => {
-      if (!pendingStream || !videoRef.current || cameraStream) {
-        return;
-      }
-
-      const video = videoRef.current;
-      
-      try {
-        video.srcObject = pendingStream;
-        
-        // Wait for video metadata to load
-        await new Promise<void>((resolve, reject) => {
-          const timeoutId = setTimeout(() => {
-            reject(new Error('Video stream timeout'));
-          }, 10000);
-          
-          const handleLoadedMetadata = () => {
-            clearTimeout(timeoutId);
-            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-            resolve();
-          };
-          
-          video.addEventListener('loadedmetadata', handleLoadedMetadata);
-          
-          // Explicitly play for iOS Safari
-          video.play().catch(reject);
-        });
-        
-        // Successfully attached
-        setCameraStream(pendingStream);
-        setPendingStream(null);
-        setIsCameraLoading(false);
-      } catch (err) {
-        console.error('Video attach error:', err);
-        
-        // Clean up the stream
-        pendingStream.getTracks().forEach(track => track.stop());
-        setPendingStream(null);
-        
-        setIsCameraLoading(false);
-        setShowCamera(false);
-        
-        setError('Unable to display camera stream. Please use the upload option below.');
-      }
-    };
-
-    if (showCamera && pendingStream && videoRef.current) {
-      attachStream();
-    }
-  }, [showCamera, pendingStream, videoRef.current]);
-
-  useEffect(() => {
-    // Cleanup image preview URLs to prevent memory leaks
-    return () => {
-      if (imagePreview) {
-        URL.revokeObjectURL(imagePreview);
-      }
-    };
-  }, [imagePreview]);
-
-  const requestLocation = () => {
-    if (!navigator.geolocation) {
-      setLocationStatus('error');
-      return;
-    }
+    if (!navigator.geolocation) return;
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -152,48 +200,108 @@ export default function ReportPage() {
         });
         setLocationStatus('granted');
       },
-      (error) => {
+      () => {
         // Permission denial is expected; the review screen offers manual entry.
         setLocationStatus('denied');
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
-  };
+  }, []);
+
+  const stopCamera = useCallback((clearError = false) => {
+    cameraRequestIdRef.current += 1;
+    stopMediaStream(cameraStreamRef.current);
+    cameraStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraStream(null);
+    setShowCamera(false);
+    setIsCameraLoading(false);
+    if (clearError) setError(null);
+  }, []);
+
+  useEffect(() => () => {
+    cameraRequestIdRef.current += 1;
+    stopMediaStream(cameraStreamRef.current);
+  }, []);
+
+  useEffect(() => {
+    // The video stays mounted while loading so the stream always has a target.
+    const attachStream = async () => {
+      if (!showCamera || !cameraStream || !videoRef.current) return;
+
+      const video = videoRef.current;
+      try {
+        if (video.srcObject !== cameraStream) video.srcObject = cameraStream;
+        await waitForVideoMetadata(video);
+        await video.play();
+        setIsCameraLoading(false);
+      } catch (err) {
+        console.error('Video attach error:', err);
+        stopCamera();
+        setError('Unable to display camera stream. Please use the upload option below.');
+      }
+    };
+
+    attachStream();
+  }, [showCamera, cameraStream, stopCamera]);
+
+  useEffect(() => {
+    // Cleanup image preview URLs to prevent memory leaks
+    return () => {
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
 
   const startCamera = async () => {
+    if (!window.isSecureContext) {
+      setError('Camera access requires HTTPS. Open the secure deployed site, or upload a photo instead.');
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('This browser does not provide camera access. You can upload a photo instead.');
+      return;
+    }
+
+    stopCamera();
+    const requestId = ++cameraRequestIdRef.current;
     setIsCameraLoading(true);
-    setShowCamera(true); // Mount video element first
+    setShowCamera(true);
     setError(null);
-    
+
     try {
-      // Request camera stream (don't check videoRef yet - element is mounting)
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false,
-      });
-      
-      // Store stream; useEffect will attach it once video element is ready
-      setPendingStream(stream);
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+      } catch (error) {
+        if (!(error instanceof DOMException) ||
+            (error.name !== 'OverconstrainedError' && error.name !== 'ConstraintNotSatisfiedError')) {
+          throw error;
+        }
+        // Some desktop and older mobile browsers reject rear-camera constraints.
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+
+      if (cameraRequestIdRef.current !== requestId) {
+        stopMediaStream(stream);
+        return;
+      }
+
+      cameraStreamRef.current = stream;
+      setCameraStream(stream);
     } catch (err) {
       console.error('Camera error:', err);
-      
-      setIsCameraLoading(false);
-      setShowCamera(false);
-      
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-      
-      // Provide helpful error messages based on common failure modes
-      if (errorMessage.includes('Permission denied') || errorMessage.includes('NotAllowedError')) {
-        setError('Camera permission denied. Please use the upload option below.');
-      } else if (errorMessage.includes('NotFoundError') || errorMessage.includes('not found')) {
-        setError('No camera found on this device. Please use the upload option below.');
-      } else {
-        setError(`Unable to access camera: ${errorMessage}. Please use the upload option below.`);
-      }
+      if (cameraRequestIdRef.current !== requestId) return;
+      stopCamera();
+      setError(getCameraErrorMessage(err));
     }
   };
 
@@ -233,13 +341,9 @@ export default function ReportPage() {
         throw new Error('Failed to capture image');
       }
       
-      const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const file = new File([blob], 'camera-photo.jpg', { type: 'image/jpeg' });
       
-      // Stop and cleanup camera
-      cameraStream.getTracks().forEach(track => track.stop());
-      setShowCamera(false);
-      setCameraStream(null);
-      
+      stopCamera();
       // Process the captured image
       await handleImageSelected(file);
     } catch (err) {
@@ -249,28 +353,31 @@ export default function ReportPage() {
   };
 
   const handleFileSelect = () => {
-    fileInputRef.current?.click();
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = '';
+    fileInputRef.current.click();
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      handleImageSelected(file);
-    }
+    e.currentTarget.value = '';
+    if (file) handleImageSelected(file);
   };
 
-  const handleImageSelected = async (file: File) => {
-    // Revoke previous object URL to prevent memory leak
-    if (imagePreview) {
-      URL.revokeObjectURL(imagePreview);
-    }
-    
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+  const handleImageSelected = async (sourceFile: File, reusePreview = false) => {
     setError(null);
     setIsUploading(true);
 
     try {
+      const file = await normalizeImageForUpload(sourceFile);
+
+      if (!reusePreview) {
+        if (imagePreview) URL.revokeObjectURL(imagePreview);
+        setImageFile(file);
+        setImagePreview(URL.createObjectURL(file));
+        setPreviewUnavailable(false);
+      }
+
       const formData = new FormData();
       formData.append('image', file);
 
@@ -363,6 +470,14 @@ export default function ReportPage() {
         </header>
 
         <main className="flex-1 px-4 py-6 max-w-2xl mx-auto w-full">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+
           {error && (
             <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
               {error}
@@ -373,30 +488,31 @@ export default function ReportPage() {
             <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-800 font-medium mb-2">Location access denied</p>
               <p className="text-sm text-yellow-700">
-                You can still submit a report. You'll be able to enter an address manually.
+                You can still submit a report. You&apos;ll be able to enter an address manually.
               </p>
             </div>
           )}
 
-          {showCamera || isCameraLoading ? (
+          {showCamera ? (
             <div className="space-y-4">
-              {isCameraLoading ? (
-                <div className="w-full aspect-video bg-black rounded-lg flex items-center justify-center">
-                  <div className="text-center text-white">
-                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
-                    <p>Starting camera...</p>
-                  </div>
-                </div>
-              ) : (
+              <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
                 <video
                   ref={videoRef}
                   autoPlay
                   playsInline
                   muted
-                  className="w-full rounded-lg bg-black"
-                  style={{ maxHeight: '70vh' }}
+                  aria-label="Live camera preview"
+                  className="h-full w-full object-cover"
                 />
-              )}
+                {isCameraLoading && (
+                  <div className="absolute inset-0 bg-black flex items-center justify-center">
+                  <div className="text-center text-white">
+                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
+                    <p>Starting camera...</p>
+                  </div>
+                  </div>
+                )}
+              </div>
               <div className="flex gap-3">
                 <button
                   onClick={capturePhoto}
@@ -406,20 +522,7 @@ export default function ReportPage() {
                   Capture Photo
                 </button>
                 <button
-                  onClick={() => {
-                    // Clean up both active and pending streams
-                    if (cameraStream) {
-                      cameraStream.getTracks().forEach(track => track.stop());
-                    }
-                    if (pendingStream) {
-                      pendingStream.getTracks().forEach(track => track.stop());
-                    }
-                    setShowCamera(false);
-                    setCameraStream(null);
-                    setPendingStream(null);
-                    setIsCameraLoading(false);
-                    setError(null);
-                  }}
+                  onClick={() => stopCamera(true)}
                   className="px-6 py-4 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition"
                 >
                   Cancel
@@ -429,9 +532,44 @@ export default function ReportPage() {
           ) : (
             <div className="space-y-4">
               {isUploading ? (
-                <div className="text-center py-12">
+                <div className="text-center py-8">
+                  {imagePreview && !previewUnavailable && (
+                    <img
+                      src={imagePreview}
+                      alt="Selected report preview"
+                      onError={() => setPreviewUnavailable(true)}
+                      className="w-full max-h-80 object-contain rounded-lg bg-black mb-6"
+                    />
+                  )}
                   <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
                   <p className="text-gray-600">Processing image...</p>
+                </div>
+              ) : imageFile && imagePreview && error ? (
+                <div className="space-y-4">
+                  {!previewUnavailable ? (
+                    <img
+                      src={imagePreview}
+                      alt="Selected report preview"
+                      onError={() => setPreviewUnavailable(true)}
+                      className="w-full max-h-80 object-contain rounded-lg bg-black"
+                    />
+                  ) : (
+                    <div className="p-4 rounded-lg bg-white border border-gray-200 text-sm text-gray-700">
+                      Selected: {imageFile.name}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => handleImageSelected(imageFile, true)}
+                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg font-medium hover:bg-blue-700 transition"
+                  >
+                    Try Processing Again
+                  </button>
+                  <button
+                    onClick={handleFileSelect}
+                    className="w-full border-2 border-gray-300 text-gray-700 py-4 px-6 rounded-lg font-medium hover:bg-gray-50 transition"
+                  >
+                    Choose Another Photo
+                  </button>
                 </div>
               ) : (
                 <>
@@ -467,13 +605,6 @@ export default function ReportPage() {
                     Upload Photo
                   </button>
 
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
                 </>
               )}
             </div>
@@ -499,7 +630,18 @@ export default function ReportPage() {
 
           <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-4">
             {imagePreview && (
-              <img src={imagePreview} alt="Report" className="w-full" />
+              !previewUnavailable ? (
+                <img
+                  src={imagePreview}
+                  alt="Report"
+                  onError={() => setPreviewUnavailable(true)}
+                  className="w-full"
+                />
+              ) : (
+                <div className="p-6 text-sm text-gray-700">
+                  Photo uploaded successfully. Preview is unavailable for this image format.
+                </div>
+              )
             )}
           </div>
 
@@ -596,8 +738,10 @@ export default function ReportPage() {
             <button
               onClick={() => {
                 setStep('capture');
+                if (imagePreview) URL.revokeObjectURL(imagePreview);
                 setImageFile(null);
                 setImagePreview(null);
+                setPreviewUnavailable(false);
                 setUploadResult(null);
                 setError(null);
               }}

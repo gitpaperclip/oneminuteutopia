@@ -7,9 +7,11 @@ export class StorageService {
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
     
     // Determine file extension
-    const ext = mimeType === 'image/jpeg' ? 'jpg' : 
-                mimeType === 'image/png' ? 'png' : 
-                mimeType === 'image/webp' ? 'webp' : 'jpg';
+    const ext = mimeType === 'image/jpeg' ? 'jpg' :
+                mimeType === 'image/png' ? 'png' :
+                mimeType === 'image/webp' ? 'webp' :
+                mimeType === 'image/heic' ? 'heic' :
+                mimeType === 'image/heif' ? 'heif' : 'jpg';
     
     const filename = `${nanoid()}-${hash.substring(0, 8)}.${ext}`;
     
@@ -23,11 +25,5 @@ export class StorageService {
       path: blob.url,
       hash,
     };
-  }
-
-  static async checkDuplicateHash(hash: string): Promise<boolean> {
-    // This would check the database for existing hash
-    // For now, returning false (no duplicate found)
-    return false;
   }
 }
