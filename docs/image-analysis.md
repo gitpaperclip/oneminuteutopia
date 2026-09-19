@@ -22,7 +22,7 @@ image reporting and AI analysis.
 2. Create a public-read Storage bucket named `report-photos` in that project.
 3. Configure `DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
    `SUPABASE_SERVICE_ROLE_KEY`, and `GEMINI_API_KEY`. `GEMINI_MODEL` overrides
-   the default `gemini-3.1-flash-lite` model. See `.env.example` for placeholders.
+   the default `gemini-3.8-flash` model. See `.env.example` for placeholders.
 4. Install dependencies and run the Next.js app. These are server routes; no
    separate Supabase Edge Function is needed.
 
@@ -114,7 +114,7 @@ key, photo, prompt, session cookie, or raw provider error body.
 - `model_unavailable`: Google returned HTTP 404; verify `GEMINI_MODEL` access.
   [New projects may not have access to Gemini 2.5](https://discuss.ai.google.dev/t/gemini-2-5-flash-deprecated-without-warning-earlier-than-shutdown-date/174217/27)
   even though it has no global shutdown date. Set
-  `GEMINI_MODEL=gemini-3.1-flash-lite` in Vercel's Production
+  `GEMINI_MODEL=gemini-3.8-flash` in Vercel's Production
   environment and redeploy. Updating the code default or `.env.example` does not
   override a value already configured in Vercel.
 - `provider_unavailable` or `network_error`: Google or the connection failed.
@@ -132,7 +132,7 @@ and [v1beta discovery contract](https://generativelanguage.googleapis.com/$disco
 Existing unavailable rows remain historical attempts; redeploying does not
 reanalyze them. Upload a new photo to verify the corrected request.
 
-The default [Gemini 3.1 Flash-Lite](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-lite)
+The default [Gemini 3.8 Flash](https://ai.google.dev/gemini-api/docs/models/gemini)
 supports image inputs and structured JSON. It uses `thinkingLevel: MINIMAL` for
 latency, with a 1,024-token output ceiling that includes thinking tokens. The
 ceiling is headroom, not a requested answer length. Existing Gemini 2.5 overrides

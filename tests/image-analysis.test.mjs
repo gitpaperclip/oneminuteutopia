@@ -128,7 +128,7 @@ test('production Gemini service sends the image, strict schema and a bounded sin
   });
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     calls++;
-    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent');
+    assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent');
     assert.equal(init.headers['x-goog-api-key'], 'test-key');
     assert.ok(!url.includes('test-key'));
     assert.equal(init.signal, signal);
@@ -171,7 +171,7 @@ test('model configuration is respected without sending incompatible thinking opt
     return response(aiResponse());
   });
   const models = [
-    ['gemini-3.1-flash-lite', { thinkingLevel: 'MINIMAL' }],
+    ['gemini-3.8-flash', { thinkingLevel: 'MINIMAL' }],
     ['gemini-3.5-flash-lite', { thinkingLevel: 'MINIMAL' }],
     ['gemini-2.5-flash', { thinkingBudget: 0 }],
     ['gemini-2.5-flash-lite', { thinkingBudget: 0 }],
