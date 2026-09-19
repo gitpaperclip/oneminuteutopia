@@ -13,16 +13,18 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const incidents = DatabaseService.getAllIncidents();
+    const incidents = await DatabaseService.getAllIncidents();
     
     // Get reports for each incident
-    const incidentsWithReports = incidents.map(incident => {
-      const reports = DatabaseService.getReportsForIncident(incident.id);
-      return {
-        ...incident,
-        reports,
-      };
-    });
+    const incidentsWithReports = await Promise.all(
+      incidents.map(async (incident) => {
+        const reports = await DatabaseService.getReportsForIncident(incident.id);
+        return {
+          ...incident,
+          reports,
+        };
+      })
+    );
 
     return NextResponse.json({
       incidents: incidentsWithReports,

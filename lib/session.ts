@@ -10,9 +10,9 @@ export class SessionService {
     let sessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
     if (!sessionId) {
-      sessionId = DatabaseService.createSession();
+      sessionId = await DatabaseService.createSession();
     } else {
-      DatabaseService.updateSessionActivity(sessionId);
+      await DatabaseService.updateSessionActivity(sessionId);
     }
 
     return sessionId;
@@ -39,11 +39,11 @@ export class SessionService {
     
     if (!sessionId) return false;
     
-    return DatabaseService.isOrganizer(sessionId);
+    return await DatabaseService.isOrganizer(sessionId);
   }
 
   static async createOrganizerSession(): Promise<string> {
-    const sessionId = DatabaseService.createOrganizerSession();
+    const sessionId = await DatabaseService.createOrganizerSession();
     const cookieStore = await cookies();
     
     cookieStore.set(ORGANIZER_COOKIE_NAME, sessionId, {
@@ -62,7 +62,7 @@ export class SessionService {
     
     if (!sessionId) return null;
     
-    if (DatabaseService.isOrganizer(sessionId)) {
+    if (await DatabaseService.isOrganizer(sessionId)) {
       return sessionId;
     }
     

@@ -1,235 +1,291 @@
-# One Minute Utopia - Phase 1 MVP
+# One Minute Utopia
 
-Camera-first civic reporting product for HopHacks 2026. Built with Next.js, React, Tailwind CSS, and Gemini AI.
+Camera-first civic infrastructure reporting for mobile devices. Built for HopHacks 2026.
 
-## Product Promise
+## Overview
 
-Resident opens a web link → takes/uploads a photo → confirms short label + location → submits → durable receipt. Anonymous by default. Organizer gets a protected inbox of usable reports.
+One Minute Utopia is a Next.js application that enables community members to quickly report civic infrastructure issues (litter, road damage, obstructions) using their phone camera. Reports are analyzed by Google Gemini AI and organized into an incident management system for community coordinators.
 
-## What Works (Phase 1)
+**Key Features:**
+- 📱 Mobile-first camera capture with rear camera prioritization
+- 🤖 AI-powered image analysis and categorization (Google Gemini)
+- 📍 GPS location capture with manual fallback
+- 🔐 Organizer passphrase authentication for coordinator inbox
+- ☁️ Serverless deployment on Vercel with Postgres + Blob storage
 
-1. ✅ Responsive web entry with camera capture and upload
-2. ✅ Browser location request with manual address fallback
-3. ✅ Server-side Gemini image analysis (category, description, confidence, routing)
-4. ✅ Review screen with photo, label, location, and optional details
-5. ✅ Durable submission with receipt ID and report page
-6. ✅ Protected coordinator inbox with photos, categories, and exportable reports
-7. ✅ SQLite persistent storage, rate limiting, session management
+## Tech Stack
 
-## Stack
+- **Framework**: Next.js 16 (App Router)
+- **Database**: Vercel Postgres (serverless PostgreSQL via Neon)
+- **File Storage**: Vercel Blob (image uploads)
+- **AI**: Google Gemini 2.0 Flash
+- **Deployment**: Vercel
+- **Styling**: Tailwind CSS 4
 
-- **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS
-- **Database**: SQLite (better-sqlite3) with durable persistence
-- **AI**: Google Gemini 2.0 Flash for image analysis
-- **Storage**: Local filesystem (production would use S3/R2)
-- **Authentication**: Session-based with organizer passphrase
+> **Note**: Vercel Postgres has transitioned to Neon. Existing databases were automatically migrated. For new projects, Vercel will provision a Neon Postgres database when you add the Postgres integration. The `@vercel/postgres` package still works and is used by this project.
 
-## Setup
+## Prerequisites
 
-### Prerequisites
+- Node.js 20+ 
+- A Vercel account
+- A Google AI (Gemini) API key ([get one here](https://aistudio.google.com/apikey))
 
-- Node.js 18+ and npm
-- Gemini API key (get from [Google AI Studio](https://makersuite.google.com/app/apikey))
+## Deploying to Vercel
 
-### Installation
+### 1. Fork or Clone the Repository
 
-1. Clone the repository:
 ```bash
-git clone <repo-url>
-cd <repo-directory>
+git clone https://github.com/gitpaperclip/oneminuteutopia.git
+cd oneminuteutopia
 ```
 
-2. Install dependencies:
+### 2. Deploy to Vercel
+
+#### Option A: Deploy via Vercel Dashboard (Recommended)
+
+1. Go to [vercel.com](https://vercel.com) and sign in
+2. Click "Add New Project"
+3. Import your GitHub repository
+4. Vercel will auto-detect Next.js settings
+5. Click "Deploy" (don't set environment variables yet)
+
+#### Option B: Deploy via CLI
+
 ```bash
+npm i -g vercel
+vercel login
+vercel --prod
+```
+
+### 3. Add Vercel Postgres Storage
+
+1. In your Vercel project dashboard, go to the **Storage** tab
+2. Click **Create Database** → **Postgres**
+3. Choose a region close to your users
+4. Click **Create**
+5. Vercel will automatically add the required environment variables to your project
+
+### 4. Add Vercel Blob Storage
+
+1. In the **Storage** tab, click **Create Database** → **Blob**
+2. Click **Create**
+3. Vercel will automatically add `BLOB_READ_WRITE_TOKEN` to your environment variables
+
+### 5. Set Required Environment Variables
+
+Go to **Settings** → **Environment Variables** and add:
+
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `GEMINI_API_KEY` | Your Gemini API key | Required for AI image analysis |
+| `ORGANIZER_PASSPHRASE` | Your secure passphrase | Coordinator login password |
+| `SESSION_SECRET` | Random 32+ char string | Session cookie signing |
+| `NEXT_PUBLIC_APP_URL` | `https://your-app.vercel.app` | Your app's URL |
+
+**Note**: `POSTGRES_*` and `BLOB_READ_WRITE_TOKEN` are automatically set by Vercel Storage.
+
+#### Generate a secure SESSION_SECRET:
+
+```bash
+openssl rand -base64 32
+```
+
+### 6. Redeploy
+
+After adding environment variables, trigger a new deployment:
+
+```bash
+vercel --prod
+```
+
+Or use the Vercel dashboard: **Deployments** → **Redeploy**.
+
+### 7. Database Initialization
+
+The database tables are created automatically on first use. No manual migration needed!
+
+When the first API request hits the database, the `DatabaseService.ensureTablesExist()` method will create all required tables and indexes.
+
+## Using the Application
+
+### For Community Members (Reporting)
+
+1. Open the app on your iPhone/Android phone: `https://your-app.vercel.app`
+2. Grant camera and location permissions when prompted
+   - **Camera**: Required for photo capture
+   - **Location**: Optional but recommended (can enter address manually)
+3. Tap **Take Photo** to use the camera (rear camera on mobile)
+   - Or tap **Upload Photo** to select from gallery
+4. Review the AI-generated category and description
+5. Adjust details if needed
+6. Tap **Submit Report**
+7. Save your Report ID from the receipt page
+
+**Note**: The camera feature requires HTTPS. Vercel provides HTTPS automatically for all deployments.
+
+### For Coordinators (Inbox)
+
+1. Navigate to: `https://your-app.vercel.app/coordinator`
+2. Enter the organizer passphrase you set in environment variables
+3. View all submitted incidents with photos
+4. Click an incident to see full details
+5. Export incident reports as JSON for municipal submission
+
+## Local Development
+
+### Setup
+
+```bash
+# Install dependencies
 npm install
-```
 
-3. Create a `.env.local` file (copy from `.env.example`):
-```bash
+# Copy environment template
 cp .env.example .env.local
+
+# Edit .env.local with your keys
+# - Add your GEMINI_API_KEY
+# - Set ORGANIZER_PASSPHRASE
+# - Generate SESSION_SECRET
+# - Add Vercel Storage credentials (see below)
 ```
 
-4. Set required environment variables in `.env.local`:
-```env
-GEMINI_API_KEY=your_actual_gemini_api_key
-ORGANIZER_PASSPHRASE=your_secure_passphrase
-```
+### Local Development with Vercel Storage
 
-### Running Locally
+To develop locally with the same Postgres and Blob storage as production:
 
-1. Start the development server:
 ```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Link to your Vercel project
+vercel link
+
+# Pull environment variables (including storage credentials)
+vercel env pull .env.local
+
+# Start development server
 npm run dev
 ```
 
-2. Open [http://localhost:3000](http://localhost:3000) in your browser
+Visit `http://localhost:3000`
 
-3. To access the coordinator inbox:
-   - Go to [http://localhost:3000/coordinator](http://localhost:3000/coordinator)
-   - Enter the organizer passphrase (default: value from `ORGANIZER_PASSPHRASE` env var)
+**Important**: The camera feature requires HTTPS. To test camera on mobile locally:
+
+1. Use Vercel's preview deployment: `vercel dev` (provides HTTPS tunnel)
+2. Or use ngrok: `ngrok http 3000` and access via the HTTPS URL
+
+## Camera Compatibility
+
+### ✅ Works Great
+- iPhone Safari (iOS 11+)
+- Android Chrome (Android 5+)
+- Mobile browsers with rear camera
+
+### ⚠️ Limited Support
+- Desktop browsers (no rear camera, often no camera at all)
+- Windows laptops (integrated cameras often fail or have permission issues)
+
+**Fallback**: The app always provides a file upload option when camera access fails or is unavailable.
+
+## Architecture Notes
+
+### Rate Limiting
+- **Uploads**: 10 per hour per session
+- **Submissions**: 20 per hour per session
+- **Login Attempts**: 5 attempts, then 15-minute lockout
+
+Rate limits are stored in-memory and reset on deployment. For production scale, consider Redis.
+
+### Image Processing
+- Max file size: 10MB
+- Supported formats: JPEG, PNG, WebP
+- Images stored on Vercel Blob (CDN-backed, public URLs)
+
+### Database Schema
+- `sessions`: User and organizer sessions
+- `reports`: Individual submissions with photos
+- `incidents`: Aggregated issues (may have multiple reports)
+- `status_events`: Incident status change audit log
+
+### AI Analysis
+- Model: Gemini 2.0 Flash
+- Timeout: 8 seconds
+- Categories: litter, path_obstruction, road_damage, other
+- Returns: category, description, confidence, routing suggestion
+
+## Environment Variables Reference
+
+See [.env.example](.env.example) for the complete list.
+
+**Required**:
+- `GEMINI_API_KEY`
+- `ORGANIZER_PASSPHRASE`
+- `SESSION_SECRET`
+- `NEXT_PUBLIC_APP_URL`
+
+**Auto-set by Vercel Storage**:
+- `POSTGRES_URL` (and related)
+- `BLOB_READ_WRITE_TOKEN`
 
 ## Project Structure
 
 ```
-/workspace
-├── app/                      # Next.js app directory
-│   ├── page.tsx             # Main reporting page (capture + review)
-│   ├── receipt/[id]/        # Receipt page after submission
-│   ├── coordinator/         # Protected organizer inbox
-│   └── api/                 # API routes
-│       ├── upload/          # Image upload + AI analysis
-│       ├── submit/          # Report submission
-│       ├── auth/login/      # Organizer authentication
-│       └── incidents/       # Get all incidents (protected)
-├── lib/                     # Core services
-│   ├── db.ts               # Database schema and operations
-│   ├── gemini.ts           # Gemini AI integration
-│   ├── storage.ts          # Image storage
-│   └── session.ts          # Session management
-├── data/                    # SQLite database (gitignored)
-├── uploads/                 # Uploaded images (gitignored)
-└── .env.example            # Environment variables template
+app/
+  api/
+    auth/login/      # Organizer authentication
+    incidents/       # Incident list for coordinators
+    submit/          # Report submission
+    upload/          # Image upload + AI analysis
+  coordinator/       # Coordinator inbox (protected)
+  receipt/[id]/      # Submission confirmation page
+  page.tsx           # Main reporting interface
+lib/
+  db.ts              # Postgres database service
+  storage.ts         # Vercel Blob storage service
+  gemini.ts          # AI analysis service
+  session.ts         # Session management
 ```
 
-## Environment Variables
+## Troubleshooting
 
-Required variables (see `.env.example` for full list):
+### Camera not working on iPhone
+- Ensure you're accessing via **HTTPS** (Vercel provides this)
+- Check that Safari has camera permissions: Settings → Safari → Camera
+- Try uploading a photo instead (always works)
 
-- `GEMINI_API_KEY` - Google Gemini API key for image analysis
-- `ORGANIZER_PASSPHRASE` - Shared passphrase for coordinator login (hackathon fallback)
-- `DATABASE_PATH` - Path to SQLite database file (default: `./data/app.db`)
-- `NODE_ENV` - Environment mode (`development` or `production`)
+### Database connection errors
+- Verify `POSTGRES_URL` is set (added by Vercel Storage)
+- Check Vercel Storage dashboard for database status
+- Tables are auto-created on first use
 
-## Features
+### Image upload fails
+- Verify `BLOB_READ_WRITE_TOKEN` is set (added by Vercel Storage)
+- Check file size (max 10MB)
+- Check Vercel Blob dashboard for storage quota
 
-### For Residents
+### AI analysis returns null
+- Verify `GEMINI_API_KEY` is valid
+- Check Gemini API quotas in Google AI Studio
+- Analysis timeout is 8 seconds (images are still saved)
 
-- **Anonymous reporting**: No account required, session-based tracking
-- **Camera-first**: Direct camera capture with rear camera on mobile
-- **Upload fallback**: Works with any image from gallery/files
-- **Location aware**: GPS location with manual address fallback
-- **AI assistance**: Automatic categorization and description
-- **Manual correction**: User can override AI suggestions
-- **Durable receipt**: Unique report ID and status tracking
+## Roadmap
 
-### For Coordinators
+**Phase 1 (Current)**: Core reporting + coordinator inbox
+- ✅ Mobile camera capture
+- ✅ AI categorization
+- ✅ Postgres + Blob storage
+- ✅ Coordinator authentication
 
-- **Protected access**: Passphrase-based authentication
-- **Visual inbox**: Grid view of all incidents with photos
-- **Detailed view**: Full incident information with all evidence
-- **Export reports**: Download structured JSON for municipal handoff
-- **Copy to clipboard**: Quick sharing of incident details
-- **Rate limiting**: Protection against abuse
+**Phase 2 (Future)**:
+- 🔜 Interactive map view
+- 🔜 Status updates
+- 🔜 Public API for municipal integration
+- 🔜 Email notifications
 
-### Categories
+## Contributing
 
-- **Litter / Debris**: Trash, scattered waste
-- **Path Obstruction**: Blocked sidewalks or pedestrian access
-- **Road Damage**: Potholes, cracks, damaged pavement
-- **Other Issue**: Issues that don't fit standard categories
-
-## AI Analysis
-
-Gemini 2.0 Flash analyzes uploaded images and provides:
-
-- Category classification (with confidence score)
-- Short label (5-8 word description)
-- Full description (2-3 sentences of observable facts)
-- Hazard detection
-- Community action candidacy
-- Routing suggestion (municipal/community/review)
-
-**Important**: AI analysis has an 8-second timeout. If it fails, manual reporting still works.
-
-## Data Model
-
-### Reports
-Individual submissions from residents with image, location, and AI analysis.
-
-### Incidents
-Shared issue records that can consolidate multiple reports (Phase 2+ feature, currently 1:1).
-
-### Sessions
-Anonymous session tracking with rate limiting and organizer role support.
-
-### Status Events
-Audit log of status changes (prepared for Phase 3 workflow).
-
-## Security
-
-- **Session-based auth**: HttpOnly cookies, no client-side tokens
-- **Rate limiting**: Upload, submission, and login attempt limits
-- **Authorization checks**: Server-side validation on all protected routes
-- **No secrets in repo**: All credentials via environment variables
-- **No secrets in client**: Passphrase and DB access server-only
-
-## Deployment Considerations
-
-For production deployment:
-
-1. Replace SQLite with PostgreSQL or similar production database
-2. Use object storage (S3, R2, etc.) instead of local filesystem
-3. Add HTTPS (required for geolocation and camera)
-4. Set strong `ORGANIZER_PASSPHRASE`
-5. Configure proper CORS and security headers
-6. Add monitoring and error tracking
-7. Consider SpacetimeDB for real-time features (Phase 2)
-
-## Testing
-
-### Manual Testing Checklist
-
-- [ ] Camera capture works on mobile device
-- [ ] Upload works from desktop
-- [ ] Location permission request appears
-- [ ] Manual address entry works when location denied
-- [ ] AI analysis provides category and description
-- [ ] Manual category selection works
-- [ ] Report submission creates receipt
-- [ ] Receipt page shows correct information
-- [ ] Coordinator login requires passphrase
-- [ ] Coordinator can see submitted reports
-- [ ] Export report downloads JSON file
-- [ ] Copy to clipboard works
-
-## Known Limitations (Phase 1)
-
-- **No live updates**: Coordinator must refresh to see new reports
-- **No map view**: List-only interface (map planned for Phase 2)
-- **No duplicate detection**: Each submission creates new incident
-- **No status updates**: Workflow transitions planned for Phase 3
-- **No account system**: Optional accounts planned for Phase 2
-- **No municipal integration**: Export-only, direct submission is future work
-- **Local storage**: Filesystem and SQLite (production needs cloud storage)
-
-## Phase 2+ Features (Not Yet Implemented)
-
-- Real-time incident map with SpacetimeDB subscriptions
-- Duplicate/nearby incident detection and consolidation
-- Optional resident accounts with report history
-- Public incident viewing and filtering
-- Credibility scoring and corroboration
-- Live status updates across devices
-
-## Phase 3+ Features (Not Yet Implemented)
-
-- Community action workflow
-- Organizer-approved cleanup tasks
-- Before/after documentation
-- Event scheduling and coordination
-- Volunteer participation tracking
+This is a hackathon project. Feel free to fork and adapt!
 
 ## License
 
-Built for HopHacks 2026. See repository for license details.
-
-## Credits
-
-- Gemini 2.0 Flash for AI image analysis
-- Next.js and React for the framework
-- Tailwind CSS for styling
-- better-sqlite3 for local persistence
-
----
-
-**Note**: This is a Phase 1 MVP built for a hackathon. Production deployment would require additional security hardening, scalability improvements, and infrastructure changes.
+MIT

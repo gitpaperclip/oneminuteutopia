@@ -10,13 +10,13 @@ interface PageProps {
 
 export default async function ReceiptPage({ params }: PageProps) {
   const { id } = await params;
-  const report = DatabaseService.getReport(id);
+  const report = await DatabaseService.getReport(id);
 
   if (!report) {
     notFound();
   }
 
-  const incident = report.incident_id ? DatabaseService.getIncident(report.incident_id) : null;
+  const incident = report.incident_id ? await DatabaseService.getIncident(report.incident_id) : null;
 
   return (
     <div className="min-h-screen bg-gray-50">

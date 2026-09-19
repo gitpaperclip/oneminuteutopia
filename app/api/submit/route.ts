@@ -76,9 +76,9 @@ export async function POST(req: NextRequest) {
 
     // Check for duplicate submission (idempotency)
     if (idempotency_key) {
-      const existing = DatabaseService.getReportByIdempotencyKey(idempotency_key);
+      const existing = await DatabaseService.getReportByIdempotencyKey(idempotency_key);
       if (existing) {
-        const incident = DatabaseService.getIncident(existing.incident_id!);
+        const incident = existing.incident_id ? await DatabaseService.getIncident(existing.incident_id) : null;
         return NextResponse.json({
           success: true,
           report_id: existing.id,
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create incident
-    const incidentId = DatabaseService.createIncident({
+    const incidentId = await DatabaseService.createIncident({
       category,
       short_label,
       full_description,
@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Create report
-    const reportId = DatabaseService.createReport({
+    const reportId = await DatabaseService.createReport({
       session_id: sessionId,
       incident_id: incidentId,
       image_path,
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
       idempotency_key: idempotency_key || nanoid(),
     });
 
-    const incident = DatabaseService.getIncident(incidentId);
+    const incident = await DatabaseService.getIncident(incidentId);
 
     return NextResponse.json({
       success: true,
