@@ -1,5 +1,5 @@
 import 'server-only';
-import { GeminiService } from './gemini.ts';
+import { GeminiService, GeminiAnalysisError } from './gemini.ts';
 import { AnalysisStore, AnalysisStorageError } from './analysis-store.ts';
 import { StorageService } from './storage.ts';
 import type { AnalysisResult } from './gemini.ts';
@@ -29,6 +29,16 @@ export async function prepareReport(buffer: Buffer, sessionId: string, services 
       await services.storage.deleteImage(image.value.path).catch(() => undefined);
     }
     throw error;
+  }
+  if (assessment.status === 'rejected') {
+    const failure = assessment.reason instanceof GeminiAnalysisError ? assessment.reason : null;
+    // The saved reference connects a reporter's failed attempt to Vercel runtime logs.
+    // Do not log the original error, provider body, session, image, or credentials.
+    console.warn('image_analysis_unavailable', JSON.stringify({
+      analysis_id: saved.id, model, code: failure?.code ?? 'unknown',
+      http_status: failure?.httpStatus, provider_reason: failure?.providerReason,
+      processing_ms: Math.round(performance.now() - started),
+    }));
   }
   return {
     success: true, image_path: saved.image_path, image_hash: saved.image_hash,

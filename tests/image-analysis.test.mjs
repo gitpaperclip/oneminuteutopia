@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES, MAX_IMAGE_BYTES, validateAnalysis, parseGemini, imageMime } from '../lib/hazard-analysis.mjs';
-import { ANALYSIS_TIMEOUT_MS, GeminiService } from '../lib/gemini.ts';
+import { ANALYSIS_TIMEOUT_MS, GeminiAnalysisError, GeminiService } from '../lib/gemini.ts';
 import { AnalysisStore } from '../lib/analysis-store.ts';
 
 const originalEnvironments = new WeakMap();
@@ -104,6 +104,7 @@ test('content MIME detection recognizes supported signatures and rejects non-ima
 
 test('production Gemini service sends the image, strict schema and a bounded single request', async t => {
   configureGemini(t);
+  setEnv(t, 'GEMINI_API_KEY', '  test-key\n');
   let calls = 0;
   const signal = new AbortController().signal;
   t.mock.method(AbortSignal, 'timeout', milliseconds => {
@@ -121,10 +122,13 @@ test('production Gemini service sends the image, strict schema and a bounded sin
     assert.equal(init.redirect, 'error');
     const body = JSON.parse(init.body);
     const config = body.generationConfig;
-    assert.deepEqual(config.responseFormat.text.schema.required, ['category', 'seriousness', 'ai_confidence']);
-    assert.equal(config.responseFormat.text.schema.additionalProperties, false);
-    assert.deepEqual(config.responseFormat.text.schema.properties.category.enum, CATEGORIES);
-    assert.equal(config.responseFormat.text.mimeType, 'application/json');
+    assert.deepEqual(config.responseJsonSchema.required, ['category', 'seriousness', 'ai_confidence']);
+    assert.equal(config.responseJsonSchema.additionalProperties, false);
+    assert.deepEqual(config.responseJsonSchema.properties.category.enum, CATEGORIES);
+    assert.deepEqual(config.responseJsonSchema.properties.seriousness, { type: ['integer', 'null'], minimum: 0, maximum: 10 });
+    assert.equal(config.responseMimeType, 'application/json');
+    assert.equal('responseFormat' in config, false);
+    assert.equal('responseSchema' in config, false);
     assert.equal(config.candidateCount, 1);
     assert.equal(config.maxOutputTokens, 256);
     assert.equal(config.thinkingConfig.thinkingBudget, 0);
@@ -158,21 +162,76 @@ test('invalid input and missing credentials fail before calling Gemini', async t
     await assert.rejects(() => GeminiService.analyzeImage(bytes, mime));
   }
   setEnv(t, 'GEMINI_MODEL', '../invalid/model');
-  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), /model ID/);
-  setEnv(t, 'GEMINI_API_KEY', undefined);
-  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), /not configured/);
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), { name: 'GeminiAnalysisError', code: 'configuration' });
+  setEnv(t, 'GEMINI_MODEL', undefined);
+  for (const key of [undefined, '', '  \n']) {
+    setEnv(t, 'GEMINI_API_KEY', key);
+    await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), { name: 'GeminiAnalysisError', code: 'configuration' });
+  }
   assert.equal(calls, 0);
 });
 
-test('HTTP rate limiting and provider failure are rejected without retries or leaking response details', async t => {
+test('HTTP failures are classified without retries or retaining provider messages and secrets', async t => {
   configureGemini(t);
   let calls = 0;
+  let status;
+  let providerReason;
+  const privateText = 'private provider details: key=test-key and image=/9j/';
   t.mock.method(globalThis, 'fetch', async () => {
     calls++;
-    return response({ error: { message: 'private provider details' } }, 429);
+    return response({ error: {
+      message: privateText,
+      details: [{ reason: providerReason, metadata: { secret: privateText } }],
+    } }, status);
   });
-  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), { message: 'Gemini request failed' });
-  assert.equal(calls, 1);
+  const failures = [
+    [400, undefined, 'invalid_request'],
+    [400, 'API_KEY_INVALID', 'credentials'],
+    [401, undefined, 'credentials'],
+    [403, 'SERVICE_DISABLED', 'credentials'],
+    [403, 'API_KEY_HTTP_REFERRER_BLOCKED', 'credentials'],
+    [404, undefined, 'model_unavailable'],
+    [429, undefined, 'rate_limited'],
+    [503, undefined, 'provider_unavailable'],
+    [500, privateText, 'provider_unavailable'],
+  ];
+  for (const [httpStatus, reason, code] of failures) {
+    status = httpStatus;
+    providerReason = reason;
+    const callsBefore = calls;
+    await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), error => {
+      assert.ok(error instanceof GeminiAnalysisError);
+      assert.equal(error.code, code);
+      assert.equal(error.httpStatus, httpStatus);
+      assert.equal(error.providerReason, reason === privateText ? undefined : reason);
+      assert.equal(error.message, `Gemini analysis failed (${code})`);
+      assert.doesNotMatch(JSON.stringify({ ...error, message: error.message, stack: error.stack }), /private provider|test-key|\/9j\//);
+      return true;
+    });
+    assert.equal(calls, callsBefore + 1);
+  }
+});
+
+test('non-JSON HTTP errors retain their status category without exposing the body', async t => {
+  configureGemini(t);
+  t.mock.method(globalThis, 'fetch', async () => new Response('private HTML containing test-key', { status: 502 }));
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), {
+    name: 'GeminiAnalysisError', code: 'provider_unavailable', httpStatus: 502,
+    providerReason: undefined, message: 'Gemini analysis failed (provider_unavailable)',
+  });
+});
+
+test('network errors become safe diagnostic categories without retaining their original cause', async t => {
+  configureGemini(t);
+  t.mock.method(globalThis, 'fetch', async () => {
+    throw new Error('private connection URL with key=test-key');
+  });
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), error => {
+    assert.equal(error.code, 'network_error');
+    assert.equal(error.cause, undefined);
+    assert.doesNotMatch(`${error.stack} ${JSON.stringify(error)}`, /private connection|test-key/);
+    return true;
+  });
 });
 
 test('the production timeout signal aborts the request and no second request is attempted', async t => {
@@ -190,14 +249,66 @@ test('the production timeout signal aborts the request and no second request is 
       queueMicrotask(() => controller.abort(new DOMException('AI request expired', 'TimeoutError')));
     });
   });
-  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), { name: 'TimeoutError' });
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), { name: 'GeminiAnalysisError', code: 'timeout' });
   assert.equal(calls, 1);
 });
 
-test('invalid Gemini output is rejected by the production service, not just by its standalone validator', async t => {
+for (const status of [200, 429]) {
+  test(`the same deadline covers reading a ${status} response body after headers arrive`, async t => {
+    configureGemini(t);
+    const controller = new AbortController();
+    t.mock.method(AbortSignal, 'timeout', milliseconds => {
+      assert.equal(milliseconds, 8000);
+      return controller.signal;
+    });
+    let calls = 0;
+    let bodyReadStarted = false;
+    t.mock.method(globalThis, 'fetch', async (_url, init) => {
+      calls++;
+      const body = new ReadableStream({ start(stream) {
+        stream.enqueue(new TextEncoder().encode('{'));
+        init.signal.addEventListener('abort', () => stream.error(init.signal.reason), { once: true });
+      } });
+      const reply = new Response(body, { status });
+      const readJSON = reply.json.bind(reply);
+      reply.json = () => {
+        bodyReadStarted = true;
+        const pending = readJSON();
+        queueMicrotask(() => controller.abort(new DOMException('Response body expired', 'TimeoutError')));
+        return pending;
+      };
+      return reply;
+    });
+    await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), { name: 'GeminiAnalysisError', code: 'timeout' });
+    assert.equal(bodyReadStarted, true);
+    assert.equal(calls, 1);
+  });
+}
+
+test('production parsing distinguishes blocked, truncated and invalid responses', async t => {
   configureGemini(t);
-  t.mock.method(globalThis, 'fetch', async () => response(aiResponse({ ...result, seriousness: 99 })));
-  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), { status: 502 });
+  let currentResponse;
+  t.mock.method(globalThis, 'fetch', async () => currentResponse);
+  const failures = [
+    [{ promptFeedback: { blockReason: 'SAFETY' } }, 'blocked_response'],
+    ...['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY', 'IMAGE_PROHIBITED_CONTENT']
+      .map(finishReason => [{ candidates: [{ finishReason }] }, 'blocked_response']),
+    [{ candidates: [{ finishReason: 'MAX_TOKENS' }] }, 'output_truncated'],
+    [aiResponse({ ...result, seriousness: 99 }), 'invalid_response'],
+    [{ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'not JSON: test-key' }] } }] }, 'invalid_response'],
+    [{ candidates: [] }, 'invalid_response'],
+    [null, 'invalid_response'],
+  ];
+  for (const [body, code] of failures) {
+    currentResponse = response(body);
+    await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), {
+      name: 'GeminiAnalysisError', code, message: `Gemini analysis failed (${code})`,
+    });
+  }
+  currentResponse = new Response('private invalid JSON: test-key');
+  await assert.rejects(() => GeminiService.analyzeImage(jpeg, 'image/jpeg'), {
+    name: 'GeminiAnalysisError', code: 'invalid_response', message: 'Gemini analysis failed (invalid_response)',
+  });
 });
 
 test('Supabase persists the assessment using server credentials', async t => {

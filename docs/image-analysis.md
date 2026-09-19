@@ -88,6 +88,41 @@ server errors can occur after a write commits, so those failures preserve the
 photo. Such ambiguous failures may leave an orphan photo or an unsubmitted
 analysis; reconciling them requires a later retention/cleanup process.
 
+## Debugging unavailable AI analysis
+
+`/api/health` checks the database schema and whether provider configuration is
+present. An `ok` response does **not** validate the Gemini key, model access,
+quota, or a live analysis request.
+
+After deploying, upload a fresh photo. If analysis is unavailable, open the
+deployment's Vercel runtime logs and search for `image_analysis_unavailable`.
+Match `analysis_id` to the review screen's saved assessment reference. The log
+contains a bounded failure code, HTTP status when available, model, elapsed
+processing time, and an allowlisted provider reason. It never includes the API
+key, photo, prompt, session cookie, or raw provider error body.
+
+- `configuration`: the key is blank or the model ID is malformed.
+- `credentials`: Google rejected the key or its access restrictions; check
+  `provider_reason`, such as `API_KEY_INVALID`, when available.
+- `invalid_request`: Google rejected the request. Check the deployed request
+  format and any provider reason such as `SERVICE_DISABLED`.
+- `rate_limited`: Google returned HTTP 429; check the project's Gemini quota.
+- `model_unavailable`: Google returned HTTP 404; verify `GEMINI_MODEL` access.
+- `provider_unavailable` or `network_error`: Google or the connection failed.
+- `timeout`: the eight-second deadline expired, including response-body reading.
+- `blocked_response`, `output_truncated`, or `invalid_response`: Gemini did not
+  return a complete, valid assessment. Manual reporting remains available.
+- `unknown`: an unexpected application failure; raw errors remain excluded.
+
+The request uses `generationConfig.responseMimeType: application/json` and
+`responseJsonSchema`. The alternative `responseFormat.text.mimeType` is an enum
+in Google's current API contract and cannot safely be treated as the same MIME
+string field. See the [GenerateContent API reference](https://ai.google.dev/api/generate-content)
+and [v1beta discovery contract](https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta).
+
+Existing unavailable rows remain historical attempts; redeploying does not
+reanalyze them. Upload a new photo to verify the corrected request.
+
 ## Score definitions
 
 - **0:** no visible hazard; this is not a declaration of safety.
