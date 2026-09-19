@@ -2,39 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HOW_TO_COPY } from '../lib/how-to-copy.ts';
 
-test('how-to title matches product name', () => {
+test('how-to heading and title are short product labels', () => {
+  assert.equal(HOW_TO_COPY.heading, 'How to use');
   assert.equal(HOW_TO_COPY.title, 'One Minute Utopia');
 });
 
-test('how-to explains photo civic reporting with AI assist', () => {
-  assert.match(HOW_TO_COPY.what, /photo civic reporting/i);
-  assert.match(HOW_TO_COPY.what, /Baltimore/i);
-  assert.match(HOW_TO_COPY.what, /AI/i);
+test('how-to steps are one-liners', () => {
+  assert.deepEqual(HOW_TO_COPY.steps, [
+    'Snap a photo',
+    'Review your submission',
+    'Save your report and get quick access to relevant agency contact information',
+  ]);
 });
 
-test('how-to steps cover photo, analysis, and save', () => {
-  assert.equal(HOW_TO_COPY.steps.length, 3);
-  assert.match(HOW_TO_COPY.steps[0], /photo/i);
-  assert.match(HOW_TO_COPY.steps[1], /AI analysis/i);
-  assert.match(HOW_TO_COPY.steps[1], /category/i);
-  assert.match(HOW_TO_COPY.steps[2], /Save/i);
-  assert.match(HOW_TO_COPY.steps[2], /community database/i);
-  assert.match(HOW_TO_COPY.steps[2], /links|contacts/i);
+test('how-to privacy marks location as recorded and underlines any', () => {
+  assert.equal(HOW_TO_COPY.location, 'Your location is recorded with your report.');
+  assert.equal(HOW_TO_COPY.privacyLead, 'Do not upload or share ');
+  assert.equal(HOW_TO_COPY.privacyAny, 'any');
+  assert.equal(HOW_TO_COPY.privacyRest, ' potentially compromising information.');
 });
 
-test('how-to privacy disclaimer is explicit about public map data', () => {
-  assert.equal(
-    HOW_TO_COPY.privacy,
-    'Your report photo and location data may appear on our public map. Avoid reporting confidential or revealing information.',
-  );
-});
-
-test('how-to mentions map confirmations without city-filing claims', () => {
-  assert.match(HOW_TO_COPY.mapHint, /I see this too/);
-  assert.match(HOW_TO_COPY.demo, /prepares and routes/i);
-  assert.match(HOW_TO_COPY.demo, /does not file/i);
-  assert.match(HOW_TO_COPY.demo, /live 311/i);
-  assert.match(HOW_TO_COPY.emergency, /911/);
-  assert.doesNotMatch(HOW_TO_COPY.demo, /submit yourself/i);
-  assert.doesNotMatch(HOW_TO_COPY.steps.join(' '), /city portal/i);
+test('how-to keeps 911 and drops 311 / portal lecture', () => {
+  assert.equal(HOW_TO_COPY.emergency, 'If the situation is dangerous, get to safety and contact 911.');
+  const blob = JSON.stringify(HOW_TO_COPY);
+  assert.doesNotMatch(blob, /311/);
+  assert.doesNotMatch(blob, /civic reporting/i);
+  assert.doesNotMatch(blob, /submit yourself/i);
+  assert.doesNotMatch(blob, /city portal/i);
+  assert.doesNotMatch(blob, /prepare/i);
 });

@@ -6,15 +6,15 @@ import { HOW_TO_COPY } from '@/lib/how-to-copy';
 export function InfoIcon() {
   return (
     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.25" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="8.2" r="1.15" fill="currentColor" />
       <path
-        d="M12 10.6v5.2"
+        d="M12 11.15v5.1"
         fill="none"
         stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <circle cx="12" cy="7.7" r="1.05" fill="currentColor" />
     </svg>
   );
 }
@@ -78,7 +78,7 @@ export function HowToOverlay({
       <div className="info-card">
         <div className="info-card-head">
           <div>
-            <p className="analysis-kicker">{HOW_TO_COPY.openLabel}</p>
+            <p className="analysis-kicker">{HOW_TO_COPY.heading}</p>
             <h2 id="info-title" className="leave-title">
               {HOW_TO_COPY.title}
             </h2>
@@ -92,17 +92,17 @@ export function HowToOverlay({
             <CloseIcon />
           </button>
         </div>
-        <p className="leave-copy">{HOW_TO_COPY.what}</p>
-        <p className="info-privacy" role="note">
-          {HOW_TO_COPY.privacy}
-        </p>
         <ol className="info-steps">
           {HOW_TO_COPY.steps.map((step) => (
             <li key={step}>{step}</li>
           ))}
         </ol>
-        <p className="info-note">{HOW_TO_COPY.mapHint}</p>
-        <p className="info-note">{HOW_TO_COPY.demo}</p>
+        <p className="info-privacy" role="note">
+          <strong>{HOW_TO_COPY.location}</strong>{' '}
+          {HOW_TO_COPY.privacyLead}
+          <u>{HOW_TO_COPY.privacyAny}</u>
+          {HOW_TO_COPY.privacyRest}
+        </p>
         <p className="info-emergency">{HOW_TO_COPY.emergency}</p>
         <button type="button" className="btn btn-primary btn-block" onClick={onClose}>
           {HOW_TO_COPY.doneLabel}

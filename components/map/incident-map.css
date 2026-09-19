@@ -171,11 +171,15 @@
   place-items: center;
   min-height: 40px;
   min-width: 40px;
-  padding: 8px;
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--blue);
   border-radius: 12px;
+  line-height: 0;
+}
+.map-chrome-info svg {
+  display: block;
 }
 
 .map-shell > .info-overlay {
