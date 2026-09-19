@@ -264,18 +264,30 @@ export class DatabaseService {
 
   static async listIncidents(filters: {
     category?: string; incidentType?: string; tag?: string; commonOnly?: boolean; limit?: number;
+    includeUnlocated?: boolean;
+    minLat?: number; maxLat?: number; minLon?: number; maxLon?: number;
   } = {}): Promise<Incident[]> {
     const sql = this.getConnection();
     const category = filters.category ?? null;
     const incidentType = filters.incidentType ?? null;
     const tag = filters.tag ?? null;
     const commonOnly = filters.commonOnly ?? false;
+    const includeUnlocated = filters.includeUnlocated ?? false;
+    const minLat = filters.minLat ?? null;
+    const maxLat = filters.maxLat ?? null;
+    const minLon = filters.minLon ?? null;
+    const maxLon = filters.maxLon ?? null;
     const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
     return await sql<Incident[]>`SELECT * FROM public.incidents
       WHERE (${category}::text IS NULL OR category = ${category})
         AND (${incidentType}::text IS NULL OR incident_type = ${incidentType})
         AND (${tag}::text IS NULL OR ${tag} = ANY(tags))
         AND (${commonOnly} = false OR evidence_count >= 2)
+        AND (${includeUnlocated} = true OR (latitude IS NOT NULL AND longitude IS NOT NULL))
+        AND (${minLat}::float8 IS NULL OR (
+          latitude BETWEEN ${minLat} AND ${maxLat}
+          AND longitude BETWEEN ${minLon} AND ${maxLon}
+        ))
       ORDER BY updated_at DESC LIMIT ${limit}`;
   }
 
