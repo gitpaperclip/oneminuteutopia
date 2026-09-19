@@ -229,7 +229,7 @@ body {
   position: absolute; left: 0; right: 0; bottom: 0;
   padding: 16px 16px calc(20px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(to top, rgba(0,0,0,.62), transparent);
-  z-index: 5;
+  z-index: 7;
 }
 .analysis-card {
   background: var(--sev-fill, #f3f4f6);

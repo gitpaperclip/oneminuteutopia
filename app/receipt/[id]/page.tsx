@@ -131,7 +131,7 @@ export default async function ReceiptPage({
             Contact 911
           </a>
           <p className="receipt-note">
-            Call now if anyone is in danger. This app does not contact 911 or submit this to the city for you.
+            Call now if anyone is in danger. This app does not contact 911 or the city for you.
           </p>
         </section>
       ) : null}

@@ -317,9 +317,9 @@ export default function HomePage() {
         }),
       });
       const data = await res.json().catch(() => {
-        throw new Error('Submit failed.');
+        throw new Error('Could not save report.');
       });
-      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Submit failed.');
+      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Could not save report.');
       if (typeof data.report_id !== 'string') throw new Error('No report id returned.');
       if (data.incident_id) {
         void groupKeyFromReport({
@@ -332,7 +332,7 @@ export default function HomePage() {
       }
       router.push(`/receipt/${encodeURIComponent(data.report_id)}?cat=${encodeURIComponent(category)}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Submit failed.');
+      setError(cause instanceof Error ? cause.message : 'Could not save report.');
       setSubmitting(false);
     }
   };
@@ -368,7 +368,7 @@ export default function HomePage() {
                 <div className="analysis-card">
                   <p className="analysis-kicker">Camera</p>
                   <h2 id="camera-denied-title" className="analysis-category">
-                    Allow camera access to submit a report
+                    Allow camera access to take a photo
                   </h2>
                   <button
                     type="button"
@@ -396,47 +396,49 @@ export default function HomePage() {
               {error}
             </p>
           )}
-          <div className={`capture-bar ${capturePhase !== 'live' ? 'is-reviewing' : ''}`}>
-            <button
-              type="button"
-              className="btn-ghost"
-              disabled={capturePhase !== 'live'}
-              onClick={() => fileRef.current?.click()}
-            >
-              Upload
-            </button>
-            <div className={`shutter-cluster is-${capturePhase}`}>
+          {!(cameraDenied && capturePhase === 'live' && !preview) && (
+            <div className={`capture-bar ${capturePhase !== 'live' ? 'is-reviewing' : ''}`}>
               <button
                 type="button"
-                className="review-btn review-discard"
-                aria-label="Discard photo"
-                disabled={!reviewing}
-                tabIndex={reviewing ? 0 : -1}
-                onClick={discardReview}
+                className="btn-ghost"
+                disabled={capturePhase !== 'live'}
+                onClick={() => fileRef.current?.click()}
               >
-                <DiscardIcon />
+                Upload
               </button>
-              <button
-                type="button"
-                className="shutter"
-                aria-label="Take photo"
-                disabled={capturePhase !== 'live' || !cameraOn}
-                tabIndex={capturePhase === 'live' ? 0 : -1}
-                onClick={() => void shutter()}
-              />
-              <button
-                type="button"
-                className="review-btn review-confirm"
-                aria-label="Use photo"
-                disabled={!reviewing}
-                tabIndex={reviewing ? 0 : -1}
-                onClick={() => void confirmReview()}
-              >
-                <ConfirmIcon />
-              </button>
+              <div className={`shutter-cluster is-${capturePhase}`}>
+                <button
+                  type="button"
+                  className="review-btn review-discard"
+                  aria-label="Discard photo"
+                  disabled={!reviewing}
+                  tabIndex={reviewing ? 0 : -1}
+                  onClick={discardReview}
+                >
+                  <DiscardIcon />
+                </button>
+                <button
+                  type="button"
+                  className="shutter"
+                  aria-label="Take photo"
+                  disabled={capturePhase !== 'live' || !cameraOn}
+                  tabIndex={capturePhase === 'live' ? 0 : -1}
+                  onClick={() => void shutter()}
+                />
+                <button
+                  type="button"
+                  className="review-btn review-confirm"
+                  aria-label="Use photo"
+                  disabled={!reviewing}
+                  tabIndex={reviewing ? 0 : -1}
+                  onClick={() => void confirmReview()}
+                >
+                  <ConfirmIcon />
+                </button>
+              </div>
+              <span aria-hidden="true" className="capture-bar-spacer" />
             </div>
-            <span aria-hidden="true" className="capture-bar-spacer" />
-          </div>
+          )}
           <input
             ref={fileRef}
             type="file"
