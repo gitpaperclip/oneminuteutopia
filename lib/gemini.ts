@@ -2,7 +2,7 @@ import 'server-only';
 
 import { PROMPT, SCHEMA, parseGemini, imageMime, MAX_IMAGE_BYTES } from './hazard-analysis.mjs';
 
-export const ANALYSIS_TIMEOUT_MS = 8_000;
+export const ANALYSIS_TIMEOUT_MS = 18_000;
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 type FailureCode = 'configuration' | 'credentials' | 'invalid_request' | 'rate_limited'
@@ -22,14 +22,27 @@ export class GeminiAnalysisError extends Error {
   readonly code: FailureCode;
   readonly httpStatus?: number;
   readonly providerReason?: string;
+  readonly finishReason?: string;
+  readonly thoughtsTokenCount?: number;
+  readonly candidatesTokenCount?: number;
 
-  constructor(code: FailureCode, httpStatus?: number, providerReason?: string) {
+  constructor(
+    code: FailureCode,
+    httpStatus?: number,
+    providerReason?: string,
+    finishReason?: string,
+    thoughtsTokenCount?: number,
+    candidatesTokenCount?: number,
+  ) {
     super(`Gemini analysis failed (${code})`);
     this.name = 'GeminiAnalysisError';
     this.code = code;
     this.httpStatus = httpStatus;
     // Never retain arbitrary provider text, which can echo request data or credentials.
     this.providerReason = providerReason && SAFE_PROVIDER_REASONS.has(providerReason) ? providerReason : undefined;
+    this.finishReason = finishReason;
+    this.thoughtsTokenCount = thoughtsTokenCount;
+    this.candidatesTokenCount = candidatesTokenCount;
   }
 }
 
@@ -95,9 +108,11 @@ export class GeminiService {
             systemInstruction: { parts: [{ text: PROMPT }] },
             contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: imageBuffer.toString('base64') } }] }],
             generationConfig: {
-              candidateCount: 1,
-              // This limit includes thought tokens as well as the three-field JSON result.
-              maxOutputTokens: 1024,
+              // Gemini 3.x rejects candidateCount; earlier models require it.
+              ...(model.startsWith('gemini-3.') ? {} : { candidateCount: 1 }),
+              // Gemini 3.8 Flash thinking (even on 'low') plus JSON output requires more headroom.
+              // For models without thinking or with thinking disabled, 8192 is safely above need.
+              maxOutputTokens: 8192,
               // Flash 2.5 otherwise spends a variable budget thinking before a small classification.
               ...(['gemini-2.5-flash', 'gemini-2.5-flash-lite'].includes(model)
                 ? { thinkingConfig: { thinkingBudget: 0 } }
@@ -105,7 +120,8 @@ export class GeminiService {
               ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
                 ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } }
                 : {}),
-              ...(model === 'gemini-3.8-flash'
+              // Gemini 3.8 Flash enables thinking by default; 'low' provides fast inference with thinking headroom.
+              ...(model.startsWith('gemini-3.8-flash')
                 ? { thinkingConfig: { thinkingLevel: 'low' } }
                 : {}),
               // Use the established generateContent JSON Schema fields.
@@ -121,15 +137,18 @@ export class GeminiService {
       });
       const candidates = record(data).candidates;
       const finishReason = Array.isArray(candidates) ? record(candidates[0]).finishReason : undefined;
+      const usage = record(data).usageMetadata;
+      const thoughtsTokenCount = typeof record(usage).thoughtsTokenCount === 'number' ? record(usage).thoughtsTokenCount : undefined;
+      const candidatesTokenCount = typeof record(usage).candidatesTokenCount === 'number' ? record(usage).candidatesTokenCount : undefined;
       if (record(record(data).promptFeedback).blockReason ||
         ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY', 'IMAGE_PROHIBITED_CONTENT'].includes(String(finishReason))) {
-        throw new GeminiAnalysisError('blocked_response');
+        throw new GeminiAnalysisError('blocked_response', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount);
       }
-      if (finishReason === 'MAX_TOKENS') throw new GeminiAnalysisError('output_truncated');
+      if (finishReason === 'MAX_TOKENS') throw new GeminiAnalysisError('output_truncated', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount);
       try {
         return parseGemini(data) as AnalysisResult;
       } catch {
-        throw new GeminiAnalysisError('invalid_response');
+        throw new GeminiAnalysisError('invalid_response', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount);
       }
     } catch (error) {
       // The same deadline covers both the request and reading its response body.
