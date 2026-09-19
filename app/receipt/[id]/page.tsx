@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { DatabaseService, type Incident } from '@/lib/db';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import { handoffsForCategory } from '@/lib/baltimore-routes';
+import { displayMockReference, mockAgencyLabel } from '@/lib/mock-agency';
 
 /* eslint-disable @next/next/no-img-element -- public mark + stored media URLs */
 
@@ -31,9 +32,11 @@ function mockPortalCopy(incident: Incident | undefined) {
     };
   }
   if (incident.mock_status === 'submitted' && incident.mock_reference_id) {
+    const agency = mockAgencyLabel(incident.mock_agency, incident.mock_reference_id);
+    const reference = displayMockReference(incident.mock_reference_id);
     return {
-      title: 'Mock city portal',
-      body: `Filed with the mock city portal — ${incident.mock_reference_id}. This is a demo stand-in, not Baltimore City.`,
+      title: agency,
+      body: `Filed with ${agency} — ${reference}. This is a demo stand-in, not Baltimore City.`,
     };
   }
   if (incident.mock_status === 'failed') {
@@ -92,7 +95,9 @@ export default async function ReceiptPage({
           <strong>{mock.title}.</strong> {mock.body}
         </p>
         {incident?.mock_reference_id ? (
-          <p className="receipt-id" aria-label="Mock reference id">{incident.mock_reference_id}</p>
+          <p className="receipt-id" aria-label="Mock reference id">
+            {displayMockReference(incident.mock_reference_id)}
+          </p>
         ) : null}
       </section>
 

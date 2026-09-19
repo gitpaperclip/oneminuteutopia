@@ -91,8 +91,9 @@ catalog endpoint is not publicly readable.
 ## Database setup
 
 Apply `supabase/migrations/202609190002_incident_context_and_clustering.sql`,
-`supabase/migrations/202609190003_baltimore_311_routing.sql`, and
-`supabase/migrations/202609190004_mock_government_submission.sql` after the two
+`supabase/migrations/202609190003_baltimore_311_routing.sql`,
+`supabase/migrations/202609190004_mock_government_submission.sql`, and
+`supabase/migrations/202609190005_mock_agency.sql` after the two
 existing reporting migrations. They backfill existing records with
 broad fallback incident types and create indexes for subtype, tag, and recent
 location matching.
@@ -106,9 +107,11 @@ necessarily share the same spatial or temporal window.
 
 A local Playwright process (`npm run worker`) reads `public.incidents`. It does
 not regroup reports. When `evidence_count >= 2`, coordinates are present, and
-the routing disposition is not `emergency` or `no_submission`, it fills the
-mock government demo form and stores `mock_reference_id` on the incident.
-That confirmation is a demo ID, not a Baltimore City case number.
+the routing disposition is not `emergency` or `no_submission`, it chooses a
+mock agency from the incident category: roads, sidewalks, and streetlights go
+to the Riverton DOT form; other civic issues go to the City 311 form. It stores
+`mock_reference_id` and `mock_agency` on the incident. That confirmation is a
+demo ID, not a Baltimore City case number.
 
 ## Baltimore 311 handoff
 

@@ -3,6 +3,7 @@ import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import { DatabaseService, type Incident } from '@/lib/db';
 import { CONTEXT_TAGS, INCIDENT_TYPES } from '@/lib/incident-taxonomy.mjs';
 import { HttpError } from '@/lib/hazard-analysis.mjs';
+import { displayMockReference, parseMockReference } from '@/lib/mock-agency';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,10 +37,12 @@ function publicIncident(incident: Incident) {
     last_reported_at: incident.last_reported_at,
     cluster_radius_m: incident.cluster_radius_m,
     is_super_report: incident.evidence_count >= 2,
-    mock_reference_id: incident.mock_reference_id,
+    mock_reference_id: displayMockReference(incident.mock_reference_id),
     mock_submitted_at: incident.mock_submitted_at,
     mock_status: incident.mock_status ?? 'pending',
     mock_error: incident.mock_error,
+    mock_agency: incident.mock_agency
+      ?? parseMockReference(incident.mock_reference_id).agency,
   };
 }
 

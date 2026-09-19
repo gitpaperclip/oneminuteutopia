@@ -69,6 +69,7 @@ export interface Incident {
   mock_submitted_at: number | null;
   mock_status: 'pending' | 'submitted' | 'failed';
   mock_error: string | null;
+  mock_agency: 'transportation' | 'general' | null;
 }
 
 export const INCIDENT_CLUSTER_RADIUS_METERS = 150;

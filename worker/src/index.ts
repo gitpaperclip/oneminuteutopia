@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
+import { routeIncident } from './agency-route.ts';
 import {
   createWorkerClient,
   fetchIncidentReports,
@@ -10,12 +11,19 @@ import {
 import { buildMockFormPayload } from './form-payload.ts';
 import { skipReason } from './ready-incidents.ts';
 import { submitToMockGovernment } from './submitToMockGovernment.ts';
-import type { WorkerIncident } from './types.ts';
+import type { WorkerIncident, WorkerReport } from './types.ts';
 
 config({ path: resolve(process.cwd(), '.env.local') });
 config();
 
 const POLL_INTERVAL_MS = 10_000;
+
+function extraInspectText(reports: WorkerReport[]): string {
+  return reports
+    .flatMap((report) => [report.user_description, report.context_summary, report.location_address])
+    .filter((value): value is string => Boolean(value && value.trim()))
+    .join(' ');
+}
 
 async function submitReadyIncidents(
   client: ReturnType<typeof createWorkerClient>,
@@ -32,9 +40,18 @@ async function submitReadyIncidents(
 
     try {
       const reports = await fetchIncidentReports(client, incident.id);
+      const route = routeIncident(incident, extraInspectText(reports));
+      if (!route) {
+        console.log(
+          `Incident ${incident.id}: no mock agency for category ${incident.category}. Skipping submission.`,
+        );
+        continue;
+      }
+
+      console.log(`Incident ${incident.id}: routing to ${route.label} (${route.agency}).`);
       const payload = buildMockFormPayload(incident, reports);
-      const referenceId = await submitToMockGovernment(payload);
-      await markIncidentSubmitted(client, incident.id, referenceId);
+      const referenceId = await submitToMockGovernment(payload, route);
+      await markIncidentSubmitted(client, incident.id, referenceId, route.agency);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('Failed to submit incident to mock government website:');

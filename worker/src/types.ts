@@ -1,4 +1,5 @@
 export type MockStatus = 'pending' | 'submitted' | 'failed';
+export type MockAgency = 'transportation' | 'general';
 
 export interface WorkerIncident {
   id: string;
@@ -15,6 +16,7 @@ export interface WorkerIncident {
   mock_submitted_at: number | null;
   mock_status: MockStatus | null;
   mock_error: string | null;
+  mock_agency?: MockAgency | null;
 }
 
 export interface WorkerReport {

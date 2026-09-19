@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import type { MockStatus, WorkerIncident, WorkerReport } from './types.ts';
+import type { MockAgency, MockStatus, WorkerIncident, WorkerReport } from './types.ts';
 
 export function createWorkerClient(): SupabaseClient {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL)?.trim();
@@ -59,20 +59,25 @@ export async function markIncidentSubmitted(
   client: SupabaseClient,
   incidentId: string,
   referenceId: string,
+  agency: MockAgency,
 ): Promise<void> {
-  const { error } = await client
-    .from('incidents')
-    .update({
-      mock_reference_id: referenceId,
-      mock_submitted_at: Date.now(),
-      mock_status: 'submitted' satisfies MockStatus,
-      mock_error: null,
-    })
-    .eq('id', incidentId);
+  const payload = {
+    mock_reference_id: referenceId,
+    mock_submitted_at: Date.now(),
+    mock_status: 'submitted' satisfies MockStatus,
+    mock_error: null,
+    mock_agency: agency,
+  };
+  const { error } = await client.from('incidents').update(payload).eq('id', incidentId);
 
-  if (error) {
-    throw new Error(`Could not save mock reference id: ${error.message}`);
+  if (!error) return;
+
+  const { mock_agency: _ignored, ...withoutAgency } = payload;
+  const retry = await client.from('incidents').update(withoutAgency).eq('id', incidentId);
+  if (retry.error) {
+    throw new Error(`Could not save mock reference id: ${retry.error.message}`);
   }
+  console.warn('Saved mock confirmation without mock_agency. Apply 202609190005_mock_agency.sql.');
 }
 
 export async function markIncidentFailed(

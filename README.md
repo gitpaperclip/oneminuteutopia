@@ -23,8 +23,9 @@ will act on a report.
 
 A separate local worker (`npm run worker`) polls `public.incidents`. When an
 incident has two or more reports, it files that cluster to a **mock** government
-website with Playwright and stores the confirmation on the incident. It does
-not call Baltimore 311.
+website with Playwright and stores the confirmation on the incident. Roads,
+sidewalks, and streetlights go to the Riverton DOT mock; other non-emergency
+issues go to the City 311 mock. It does not call Baltimore 311.
 
 If Gemini is unavailable, the photo and an explicitly unavailable assessment are
 saved so that manual reporting remains usable. An unavailable assessment is
@@ -58,7 +59,7 @@ integration is prepare-only (packet generation, form preview, link generation).
 Users must manually confirm and submit through the city's portal. Never claim
 "submitted" to any government system — a link opened or form displayed is NOT
 proof of city acceptance. The Playwright worker files only to the mock
-government demo site.
+government demo sites (City 311 and Riverton DOT).
 
 ## Local setup
 
@@ -118,7 +119,9 @@ npm run worker
 
 The worker reads the same `.env.local` as the app and polls `public.incidents`
 every 10 seconds. A visible browser opens only for clustered, non-emergency
-incidents that have not already been filed. Playwright will not run on Vercel.
+incidents that have not already been filed. Road and streetlight clusters open
+the transportation mock; litter and other civic issues open the general 311
+mock. Playwright will not run on Vercel.
 
 Open `http://localhost:3000`. On a physical phone, use an HTTPS deployment or
 an HTTPS development tunnel; camera and location permissions require a secure
@@ -176,7 +179,8 @@ app/receipt/[id]/page.tsx          Durable report receipt
 app/api/upload/route.ts           Validate, normalize, store, analyze, and save
 app/api/submit/route.ts           Authoritative report submission
 app/api/health/route.ts           Configuration and database health
-worker/src/index.ts              Poll incidents and file the mock government form
+worker/src/index.ts              Poll incidents and file the matching mock form
+worker/src/agency-route.ts       Choose Riverton DOT vs City 311 from category
 lib/gemini.ts                    Server-side Gemini request
 lib/hazard-analysis.mjs          Prompt, schema, and validation
 lib/analysis-store.ts            Saved analysis persistence
