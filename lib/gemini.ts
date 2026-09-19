@@ -148,7 +148,7 @@ export class GeminiService {
             ? { thinkingConfig: { thinkingBudget: 0 } }
             : {}),
           ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
-            ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } }
+            ? { thinkingConfig: { thinkingLevel: 'minimal' } }
             : {}),
           // Gemini 3.8 Flash enables thinking by default; 'low' provides fast inference with thinking headroom.
           ...(model.startsWith('gemini-3.8-flash')
