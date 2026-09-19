@@ -6,7 +6,8 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { publicIncidentImageUrl, type IncidentBbox, type MapIncident } from '@/lib/map-incident-types';
+import type { IncidentBbox, MapIncident } from '@/lib/map-incident-types';
+import { publicIncidentImageUrl } from '@/lib/map-photo';
 import {
   MAP_COPY,
   confirmationTotalLabel,

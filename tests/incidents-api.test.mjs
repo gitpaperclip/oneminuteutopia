@@ -6,9 +6,10 @@ import { DatabaseService } from '../lib/db.ts';
 import { validateReportInput } from '../lib/report-input.ts';
 import { HttpError } from '../lib/hazard-analysis.mjs';
 import {
-  parseBboxQuery, parseBooleanQuery, parseLimitQuery, publicIncidentImageUrl,
-  sanitizePublicPhotoUrl, sliceIncidentsPage, toMapIncident, toPublicIncidentReports,
+  parseBboxQuery, parseBooleanQuery, parseLimitQuery, sliceIncidentsPage,
+  toMapIncident, toPublicIncidentReports,
 } from '../lib/map-incident-types.ts';
+import { publicIncidentImageUrl, sanitizePublicPhotoUrl } from '../lib/map-photo.ts';
 
 const migrations = await Promise.all([
   '202609190000_reporting.sql',
