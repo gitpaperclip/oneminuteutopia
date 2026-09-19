@@ -16,6 +16,26 @@ function optionalPreset(value: string | null, allowed: readonly string[], label:
 export async function GET(req: NextRequest) {
   try {
     const query = req.nextUrl.searchParams;
+    
+    // Check if requesting a specific incident with its reports
+    const incidentId = query.get('id');
+    if (incidentId) {
+      const incident = await DatabaseService.getIncident(incidentId);
+      if (!incident) {
+        return NextResponse.json({ error: 'Incident not found' }, { status: 404 });
+      }
+      const reports = await DatabaseService.getIncidentReports(incidentId);
+      return NextResponse.json(
+        { 
+          incident,
+          reports,
+          evidence_count: reports.length
+        },
+        { headers: { 'Cache-Control': 'public, max-age=60' } }
+      );
+    }
+    
+    // Otherwise, list incidents with filters
     const category = optionalPreset(query.get('category'), Object.keys(CATEGORY_LABELS), 'category');
     const incidentType = optionalPreset(query.get('incident_type'), INCIDENT_TYPES, 'incident type');
     const tag = optionalPreset(query.get('tag'), [...INCIDENT_TYPES, ...CONTEXT_TAGS], 'tag');
