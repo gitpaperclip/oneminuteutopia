@@ -1,39 +1,7 @@
 import 'server-only';
 import type { Report } from './db.ts';
 import { CATEGORY_LABELS } from './analysis-labels.ts';
-
-/**
- * Prepared 311 report packet for HUMAN REVIEW ONLY.
- * 
- * This is NOT a submission confirmation. The app prepares this data for the user
- * to review and manually submit to Baltimore 311 themselves. No automated submission occurs.
- */
-export interface PreparedReport {
-  report_id: string;
-  readiness: 'ready' | 'choose_service' | 'needs_location' | 'manual_review' | 'emergency' | 'not_reportable';
-  routing_disposition: '311' | 'manual_review' | 'emergency' | 'no_submission';
-  department: string | null;
-  service_type: string | null;
-  alternative_service_types: string[];
-  prepared_fields: {
-    description: string | null;
-    location: string | null;
-    latitude: number | null;
-    longitude: number | null;
-    photo_url: string;
-    category: string;
-    category_label: string;
-    incident_type: string | null;
-    context_summary: string | null;
-    seriousness: number | null;
-    created_at: number;
-  };
-  user_action: {
-    label: string;
-    url: string | null;
-  } | null;
-  disclaimer: string;
-}
+import type { PreparedReport, PreparedReportServiceOption } from './prepared-report-types.ts';
 
 export class BaltimoreRoutingService {
   /**
@@ -43,6 +11,7 @@ export class BaltimoreRoutingService {
    * to review and manually submit themselves. No 311 API calls, no Open311, no city portal automation.
    * 
    * Derives routing from trusted stored analysis fields, not browser-supplied AI fields.
+   * Implements the frozen contract from lib/prepared-report-types.ts.
    */
   static prepareReport(report: Report): PreparedReport {
     const disposition = report.routing_disposition as '311' | 'manual_review' | 'emergency' | 'no_submission';
@@ -52,79 +21,93 @@ export class BaltimoreRoutingService {
     const hasLocation = (report.latitude !== null && report.longitude !== null) || report.location_address !== null;
     
     let readiness: PreparedReport['readiness'];
-    let serviceType: string | null = null;
-    let alternativeServices: string[] = [];
-    let userAction: PreparedReport['user_action'] = null;
+    let readinessMessage: string;
+    let serviceCode: string | null = null;
+    let serviceOptions: PreparedReportServiceOption[] | null = null;
+    let intakeUrl: string | null = null;
+    let phone: string | null = null;
 
     switch (disposition) {
       case 'emergency':
         readiness = 'emergency';
-        userAction = {
-          label: 'Call 911 immediately',
-          url: null,
-        };
+        readinessMessage = 'Call 911 immediately. Do not wait.';
+        phone = '911';
         break;
       case '311':
         if (!hasLocation) {
           readiness = 'needs_location';
+          readinessMessage = 'Location is required to prepare this report.';
         } else if (serviceCandidates.length === 0) {
           readiness = 'manual_review';
+          readinessMessage = 'This report will be reviewed before preparing a 311 packet.';
         } else if (serviceCandidates.length === 1) {
           readiness = 'ready';
-          serviceType = serviceCandidates[0];
-          userAction = {
-            label: 'Continue in Baltimore 311',
-            url: 'https://balt311.baltimorecity.gov/citizen/s/',
-          };
+          readinessMessage = 'Your report packet is ready. Open the Baltimore 311 portal to submit.';
+          serviceCode = serviceCandidates[0];
+          intakeUrl = 'https://balt311.baltimorecity.gov/citizen/s/';
+          phone = '311';
         } else {
           readiness = 'choose_service';
-          serviceType = serviceCandidates[0]; // First as primary recommendation
-          alternativeServices = serviceCandidates.slice(1);
-          userAction = {
-            label: 'Continue in Baltimore 311',
-            url: 'https://balt311.baltimorecity.gov/citizen/s/',
-          };
+          readinessMessage = 'Multiple services match this issue. Which applies?';
+          serviceOptions = serviceCandidates.map(code => ({
+            service_code: code,
+            service_name: this.getServiceName(code),
+            description: `Service type: ${code}`,
+            owner: 'Baltimore City',
+            response_time: null,
+          }));
+          intakeUrl = 'https://balt311.baltimorecity.gov/citizen/s/';
+          phone = '311';
         }
         break;
       case 'manual_review':
         readiness = 'manual_review';
-        if (serviceCandidates.length > 0) {
-          serviceType = serviceCandidates[0];
-          alternativeServices = serviceCandidates.slice(1);
-        }
+        readinessMessage = 'This report will be reviewed before preparing a 311 packet.';
         break;
       case 'no_submission':
         readiness = 'not_reportable';
+        readinessMessage = 'This does not appear to be a city service issue.';
         break;
       default:
         readiness = 'manual_review';
+        readinessMessage = 'This report requires review.';
     }
-
-    // Department extraction (not in stored data, would need mapping)
-    const department = null; // Baltimore catalog does not provide department mapping
 
     return {
       report_id: report.id,
       readiness,
-      routing_disposition: disposition,
-      department,
-      service_type: serviceType,
-      alternative_service_types: alternativeServices,
+      readiness_message: readinessMessage,
+      service_code: serviceCode,
+      service_options: serviceOptions,
+      jurisdiction: 'city', // Default to city for Baltimore 311 services
+      owner: readiness === 'emergency' ? null : 'Baltimore City',
+      intake_url: intakeUrl,
+      phone,
+      last_verified: '2026-09-19', // Current date per workplan
+      source_url: 'https://balt311.baltimorecity.gov/',
       prepared_fields: {
-        description: report.user_description,
-        location: report.location_address,
+        description: report.user_description || '',
+        location: report.location_address || '',
         latitude: report.latitude,
         longitude: report.longitude,
         photo_url: report.image_path,
         category: report.category,
         category_label: CATEGORY_LABELS[report.category] || report.category,
-        incident_type: report.incident_type,
-        context_summary: report.context_summary,
+        incident_type: report.incident_type || '',
+        context_summary: report.context_summary || '',
         seriousness: report.seriousness,
         created_at: report.created_at,
       },
-      user_action: userAction,
-      disclaimer: 'Prepared by One Minute Utopia. Review and submit through Baltimore 311.',
+      user_action: readiness === 'ready' 
+        ? 'Open the Baltimore 311 portal and enter the details shown above.'
+        : null,
+      disclaimer: 'This app does not submit reports to the city. You must complete submission through the Baltimore 311 portal. A link opened is not proof of city acceptance.',
     };
+  }
+
+  private static getServiceName(code: string): string {
+    // Extract readable name from service code
+    // TRM-Potholes → Potholes, SW-Illegal Dumping → Illegal Dumping
+    return code.replace(/^[A-Z]+-/, '').replace(/-/g, ' ');
   }
 }
