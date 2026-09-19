@@ -176,15 +176,6 @@ test('model configuration is respected without sending incompatible thinking opt
     return response(aiResponse());
   });
   const models = [
-<<<<<<< HEAD
-    ['gemini-3.8-flash', { thinkingLevel: 'low' }],
-    ['gemini-3.5-flash-lite', { thinkingLevel: 'MINIMAL' }],
-    ['gemini-2.5-flash', { thinkingBudget: 0 }],
-    ['gemini-2.5-flash-lite', { thinkingBudget: 0 }],
-    ['gemini-custom-model', undefined],
-    ['gemini-3.1-flash-lite-image', undefined],
-    ['gemini-3.5-flash-lite-preview', undefined],
-=======
     ['gemini-3.1-flash-lite', { thinkingLevel: 'MINIMAL' }, false],
     ['gemini-3.5-flash-lite', { thinkingLevel: 'MINIMAL' }, false],
     ['gemini-2.5-flash', { thinkingBudget: 0 }, true],
@@ -194,7 +185,6 @@ test('model configuration is respected without sending incompatible thinking opt
     ['gemini-custom-model', undefined, true],
     ['gemini-3.1-flash-lite-image', undefined, false],
     ['gemini-3.5-flash-lite-preview', undefined, false],
->>>>>>> 743bfcd (Fix Gemini 3.8 Flash soft-fail: remove candidateCount, raise tokens and timeout)
   ];
   for (const [model, thinking, hasCandidateCount] of models) {
     expectedModel = model;

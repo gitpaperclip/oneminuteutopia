@@ -138,8 +138,10 @@ export class GeminiService {
       const candidates = record(data).candidates;
       const finishReason = Array.isArray(candidates) ? record(candidates[0]).finishReason : undefined;
       const usage = record(data).usageMetadata;
-      const thoughtsTokenCount = typeof record(usage).thoughtsTokenCount === 'number' ? record(usage).thoughtsTokenCount : undefined;
-      const candidatesTokenCount = typeof record(usage).candidatesTokenCount === 'number' ? record(usage).candidatesTokenCount : undefined;
+      const thoughtsToken = record(usage).thoughtsTokenCount;
+      const thoughtsTokenCount = typeof thoughtsToken === 'number' ? thoughtsToken : undefined;
+      const candidatesToken = record(usage).candidatesTokenCount;
+      const candidatesTokenCount = typeof candidatesToken === 'number' ? candidatesToken : undefined;
       if (record(record(data).promptFeedback).blockReason ||
         ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY', 'IMAGE_PROHIBITED_CONTENT'].includes(String(finishReason))) {
         throw new GeminiAnalysisError('blocked_response', undefined, undefined, String(finishReason), thoughtsTokenCount, candidatesTokenCount);
