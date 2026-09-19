@@ -92,17 +92,16 @@ export function HowToOverlay({
             <CloseIcon />
           </button>
         </div>
-        <p className="leave-copy">{HOW_TO_COPY.what}</p>
-        <p className="info-privacy" role="note">
-          {HOW_TO_COPY.privacy}
-        </p>
         <ol className="info-steps">
           {HOW_TO_COPY.steps.map((step) => (
             <li key={step}>{step}</li>
           ))}
         </ol>
-        <p className="info-note">{HOW_TO_COPY.mapHint}</p>
-        <p className="info-note">{HOW_TO_COPY.demo}</p>
+        <p className="info-privacy" role="note">
+          <strong>{HOW_TO_COPY.privacyLead}</strong>
+          <u>{HOW_TO_COPY.privacyEmphasis}</u>
+          {HOW_TO_COPY.privacyTail}
+        </p>
         <p className="info-emergency">{HOW_TO_COPY.emergency}</p>
         <button type="button" className="btn btn-primary btn-block" onClick={onClose}>
           {HOW_TO_COPY.doneLabel}

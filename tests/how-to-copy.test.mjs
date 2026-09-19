@@ -1,40 +1,55 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HOW_TO_COPY } from '../lib/how-to-copy.ts';
+import { readFileSync } from 'node:fs';
+import { HOW_TO_COPY, HOW_TO_PRIVACY } from '../lib/how-to-copy.ts';
 
-test('how-to title matches product name', () => {
+const panelSource = readFileSync(new URL('../components/HowToPanel.tsx', import.meta.url), 'utf8');
+const copySource = readFileSync(new URL('../lib/how-to-copy.ts', import.meta.url), 'utf8');
+const cssSource = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
+
+test('how-to heading and title are Jake lean copy', () => {
+  assert.equal(HOW_TO_COPY.openLabel, 'How to use');
   assert.equal(HOW_TO_COPY.title, 'One Minute Utopia');
 });
 
-test('how-to explains photo civic reporting with AI assist', () => {
-  assert.match(HOW_TO_COPY.what, /photo civic reporting/i);
-  assert.match(HOW_TO_COPY.what, /Baltimore/i);
-  assert.match(HOW_TO_COPY.what, /AI/i);
+test('how-to has no civic-street / hazards subtitle or similar fluff', () => {
+  assert.equal('what' in HOW_TO_COPY, false);
+  assert.doesNotMatch(copySource, /civic|hazard|Baltimore|AI assist|street issues/i);
+  assert.doesNotMatch(panelSource, /HOW_TO_COPY\.what|leave-copy/);
 });
 
-test('how-to steps cover photo, analysis, and save', () => {
-  assert.equal(HOW_TO_COPY.steps.length, 3);
-  assert.match(HOW_TO_COPY.steps[0], /photo/i);
-  assert.match(HOW_TO_COPY.steps[1], /AI analysis/i);
-  assert.match(HOW_TO_COPY.steps[1], /category/i);
-  assert.match(HOW_TO_COPY.steps[2], /Save/i);
-  assert.match(HOW_TO_COPY.steps[2], /community database/i);
-  assert.match(HOW_TO_COPY.steps[2], /links|contacts/i);
+test('how-to steps are the three numbered one-liners', () => {
+  assert.deepEqual([...HOW_TO_COPY.steps], [
+    'Snap a photo',
+    'Review your submission',
+    'Save your report and get quick access to relevant agency contact information',
+  ]);
 });
 
-test('how-to privacy disclaimer is explicit about public map data', () => {
+test('how-to privacy disclaimer bolds the lead and underlines any', () => {
   assert.equal(
-    HOW_TO_COPY.privacy,
-    'Your report photo and location data may appear on our public map. Avoid reporting confidential or revealing information.',
+    HOW_TO_PRIVACY,
+    'Your location is recorded with your report. Do not upload or share any potentially compromising information.',
   );
+  assert.equal(HOW_TO_COPY.privacyLead, 'Your location is recorded with your report. Do not upload or share ');
+  assert.equal(HOW_TO_COPY.privacyEmphasis, 'any');
+  assert.equal(HOW_TO_COPY.privacyTail, ' potentially compromising information.');
+  assert.match(panelSource, /<strong>\{HOW_TO_COPY\.privacyLead\}<\/strong>/);
+  assert.match(panelSource, /<u>\{HOW_TO_COPY\.privacyEmphasis\}<\/u>/);
 });
 
-test('how-to mentions map confirmations without city-filing claims', () => {
-  assert.match(HOW_TO_COPY.mapHint, /I see this too/);
-  assert.match(HOW_TO_COPY.demo, /prepares and routes/i);
-  assert.match(HOW_TO_COPY.demo, /does not file/i);
-  assert.match(HOW_TO_COPY.demo, /live 311/i);
-  assert.match(HOW_TO_COPY.emergency, /911/);
-  assert.doesNotMatch(HOW_TO_COPY.demo, /submit yourself/i);
-  assert.doesNotMatch(HOW_TO_COPY.steps.join(' '), /city portal/i);
+test('how-to keeps the 911 safety line and drops 311 / map lectures', () => {
+  assert.equal(HOW_TO_COPY.emergency, 'If the situation is dangerous, get to safety and contact 911.');
+  assert.equal('mapHint' in HOW_TO_COPY, false);
+  assert.equal('demo' in HOW_TO_COPY, false);
+  assert.doesNotMatch(copySource, /311|mapHint|I see this too|city portal|prepare/i);
+  assert.doesNotMatch(panelSource, /mapHint|HOW_TO_COPY\.demo|info-note|311|city portal/i);
+  assert.doesNotMatch(HOW_TO_COPY.steps.join(' '), /311|city portal|prepare/i);
+});
+
+test('capture (i) control wins over btn-ghost padding for a true 44 center', () => {
+  assert.match(cssSource, /\.btn-ghost\.capture-info\s*\{[^}]*padding:\s*0;/s);
+  assert.match(cssSource, /\.btn-ghost\.capture-info\s*\{[^}]*place-items:\s*center;/s);
+  assert.match(cssSource, /\.btn-ghost\.capture-info\s*\{[^}]*width:\s*44px;/s);
+  assert.match(cssSource, /\.btn-ghost\.capture-info\s*\{[^}]*height:\s*44px;/s);
 });
