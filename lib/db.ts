@@ -10,6 +10,7 @@ import {
 import { baltimoreRouteForIncidentType } from './baltimore-311-routing.mjs';
 import type { SavedAnalysis } from './analysis-store.ts';
 import type { ReportInput } from './report-input.ts';
+import { confirmationsUnavailableMessage, isMissingConfirmationsSchema } from './confirmation-schema.ts';
 
 export interface Report {
   id: string;
@@ -316,6 +317,7 @@ export class DatabaseService {
     incidentId: string,
     sessionId: string | null,
   ): Promise<{ confirmation_count: number; viewer_confirmed: boolean } | undefined> {
+    try {
     const sql = this.getConnection();
     const [incident] = await sql<Pick<Incident, 'id' | 'confirmation_count'>[]>`
       SELECT id, confirmation_count FROM public.incidents WHERE id = ${incidentId}`;
@@ -327,12 +329,17 @@ export class DatabaseService {
       SELECT 1 FROM public.incident_confirmations
       WHERE incident_id = ${incidentId} AND session_id = ${sessionId} LIMIT 1`;
     return { confirmation_count: incident.confirmation_count, viewer_confirmed: rows.length === 1 };
+    } catch (error) {
+      throwIfMissingConfirmationsSchema(error);
+      throw error;
+    }
   }
 
   static async confirmIncident(
     incidentId: string,
     sessionId: string,
   ): Promise<{ confirmation_count: number; viewer_confirmed: boolean; evidence_count: number }> {
+    try {
     const sql = this.getConnection();
     return await sql.begin(async tx => {
       await tx`SET LOCAL statement_timeout = '10s'`;
@@ -362,12 +369,17 @@ export class DatabaseService {
         evidence_count: updated.evidence_count,
       };
     });
+    } catch (error) {
+      throwIfMissingConfirmationsSchema(error);
+      throw error;
+    }
   }
 
   static async unconfirmIncident(
     incidentId: string,
     sessionId: string,
   ): Promise<{ confirmation_count: number; viewer_confirmed: boolean; evidence_count: number }> {
+    try {
     const sql = this.getConnection();
     return await sql.begin(async tx => {
       await tx`SET LOCAL statement_timeout = '10s'`;
@@ -395,5 +407,15 @@ export class DatabaseService {
         evidence_count: updated.evidence_count,
       };
     });
+    } catch (error) {
+      throwIfMissingConfirmationsSchema(error);
+      throw error;
+    }
+  }
+}
+
+function throwIfMissingConfirmationsSchema(error: unknown): void {
+  if (isMissingConfirmationsSchema(error)) {
+    throw new HttpError(503, confirmationsUnavailableMessage());
   }
 }

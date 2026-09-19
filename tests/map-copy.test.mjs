@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  MAP_COPY,
   confirmationTotalLabel,
   humanizeSlug,
   incidentSheetDescription,
   incidentSheetTitle,
   superReportBadge,
 } from '../lib/map-copy.ts';
+import { confirmationsUnavailableMessage, isMissingConfirmationsSchema } from '../lib/confirmation-schema.ts';
 
 test('sheet title prefers a specific incident type over a category duplicate', () => {
   assert.equal(incidentSheetTitle({
@@ -39,4 +41,13 @@ test('confirmation copy is a count, not a vote', () => {
   assert.equal(confirmationTotalLabel(1), '1 community confirmation');
   assert.equal(confirmationTotalLabel(12), '12 community confirmations');
   assert.equal(humanizeSlug('illegal_dumping'), 'Illegal Dumping');
+  assert.equal(MAP_COPY.seeThisToo, 'I see this too');
+  assert.equal(MAP_COPY.unseeThis, 'Unsee');
+});
+
+test('missing confirmation table is a clear schema error', () => {
+  assert.equal(isMissingConfirmationsSchema({ code: '42P01', message: 'relation "incident_confirmations" does not exist' }), true);
+  assert.equal(isMissingConfirmationsSchema({ code: '42703', message: 'column "confirmation_count" does not exist' }), true);
+  assert.equal(isMissingConfirmationsSchema(new Error('timeout')), false);
+  assert.match(confirmationsUnavailableMessage(), /incident_confirmations/);
 });

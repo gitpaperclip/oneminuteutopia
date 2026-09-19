@@ -3,9 +3,6 @@ import { CATEGORY_LABELS } from './analysis-labels.ts';
 /** Public map chrome and selected-sheet copy. Edit here — not Contacts. */
 export const MAP_COPY = {
   title: 'Incident map',
-  configErrorTitle: 'Map style is not configured',
-  configErrorBody:
-    'Set NEXT_PUBLIC_MAP_STYLE_URL to an OpenMapTiles-compatible MapLibre style. Do not put private tokens in client code.',
   apiErrorTitle: 'Could not load incidents',
   emptyTitle: 'No incidents in this view',
   emptyBody: 'Pan the map or submit a photo report with GPS. This map only shows saved incidents.',
@@ -13,20 +10,20 @@ export const MAP_COPY = {
   unmappedBody: 'Reports in this view are missing a centroid latitude and longitude.',
   truncated:
     'Showing the most recently updated incidents in this view. Zoom in to load a smaller area.',
-  locate: 'My location',
   report: 'Report',
   filters: 'Filters',
   resetFilters: 'Reset',
   superReportsOnly: 'Super-reports only',
   allCategories: 'All categories',
   seeThisToo: 'I see this too',
+  unseeThis: 'Unsee',
   confirmed: 'You confirmed this issue',
   removeConfirmation: 'Remove confirmation',
   confirmationHint:
     'A community confirmation is not a photo report, a vote, or a city filing.',
+  confirmationsUnavailable:
+    'I-see-this-too is not available on this database yet. Apply supabase/migrations/202609190005_incident_confirmations.sql.',
   loading: 'Loading incidents…',
-  clusterNote:
-    'Nearby dots are grouped for display only. Database super-reports stay the source of truth.',
 } as const;
 
 const GENERIC_TYPES = new Set([

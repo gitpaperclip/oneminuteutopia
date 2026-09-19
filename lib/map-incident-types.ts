@@ -96,6 +96,26 @@ export function toMapIncident(incident: {
   };
 }
 
+export interface PublicIncidentReport {
+  id: string;
+  incident_id: string | null;
+  image_path: string;
+  category: string;
+  incident_type: string | null;
+  short_label: string;
+  user_description: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  location_address: string | null;
+  ai_confidence: number | null;
+  seriousness: number | null;
+  analysis_status: string | null;
+  tags: string[];
+  baltimore_service_candidates: string[];
+  routing_disposition: string;
+  created_at: number;
+}
+
 export function toPublicIncidentReports<T extends {
   id: string;
   incident_id: string | null;
@@ -114,7 +134,7 @@ export function toPublicIncidentReports<T extends {
   baltimore_service_candidates: string[] | null;
   routing_disposition: string;
   created_at: number;
-}>(reports: T[]) {
+}>(reports: T[]): PublicIncidentReport[] {
   return reports.map(report => ({
     id: report.id,
     incident_id: report.incident_id,

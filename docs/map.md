@@ -2,10 +2,10 @@
 
 Architecture:
 
-`Supabase/Postgres incidents → GET /api/incidents → GeoJSON → MapLibre`
+`Supabase/Postgres incidents → GET /api/incidents → Leaflet + OpenStreetMap tiles`
 
-OpenMapTiles (via `NEXT_PUBLIC_MAP_STYLE_URL`) is the basemap only. It is not
-the source of incident records. Private tokens stay off `NEXT_PUBLIC_*`.
+The basemap is public OSM raster tiles. No `NEXT_PUBLIC_MAP_STYLE_URL` or
+MapLibre style is required. Private tokens stay off `NEXT_PUBLIC_*`.
 
 ## Truncation
 
@@ -17,18 +17,25 @@ and returns:
 ```
 
 The map treats `truncated: true` as “this view is incomplete — zoom in.” It
-does not pretend the viewport is the full dataset. This keeps the current
-bbox + GeoJSON clustering path compatible with a later PostGIS/MVT endpoint.
+does not pretend the viewport is the full dataset.
 
-## Display vs database clustering
+## Pins vs database clustering
 
-MapLibre clusters nearby dots at low zoom. That is not database
-deduplication. Super-reports remain `evidence_count >= 2` from the 150 m /
-72 h matcher. Do not label `cluster_radius_m` as a hazard or impact radius.
+Leaflet draws one pin per mappable incident. Nearby pins may overlap at low
+zoom; that is not database deduplication. Super-reports remain
+`evidence_count >= 2` from the 150 m / 72 h matcher. Do not label
+`cluster_radius_m` as a hazard or impact radius.
 
-Coordinates are GeoJSON `[longitude, latitude]`. Missing
-`highest_seriousness` is omitted from feature properties and painted gray —
-it is never treated as 0.
+Missing `highest_seriousness` is never treated as 0.
+
+## Selected sheet photo
+
+Selecting a pin loads `GET /api/incidents?id=` and shows the latest attached
+report `image_path` (public or signed http(s) URL). The list `MapIncident`
+payload stays unchanged. The detail DTO still strips `session_id`,
+`image_hash`, and other ownership fields. URL picking lives in `lib/map-photo.ts`
+so the client never imports server-only analysis code. Missing or invalid
+photos render a compact placeholder; the sheet and confirm controls stay usable.
 
 ## I see this too
 

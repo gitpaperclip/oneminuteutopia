@@ -9,6 +9,7 @@ import {
   parseBboxQuery, parseBooleanQuery, parseLimitQuery, sliceIncidentsPage,
   toMapIncident, toPublicIncidentReports,
 } from '../lib/map-incident-types.ts';
+import { publicIncidentImageUrl, sanitizePublicPhotoUrl } from '../lib/map-photo.ts';
 
 const migrations = await Promise.all([
   '202609190000_reporting.sql',
@@ -215,5 +216,23 @@ test('public list and drill-down payloads never include session identifiers', as
   assert.equal('session_id' in publicReports[0], false);
   assert.equal('image_hash' in publicReports[0], false);
   assert.equal(publicReports[0].image_path.startsWith('https://'), true);
+  assert.equal(publicIncidentImageUrl(publicReports), publicReports[0].image_path);
   assertNoSessionLeak({ incident: toMapIncident(incident), reports: publicReports }, [session]);
+});
+
+test('sheet photo uses the latest public http(s) report URL and ignores private schemes', () => {
+  assert.equal(sanitizePublicPhotoUrl('javascript:alert(1)'), null);
+  assert.equal(sanitizePublicPhotoUrl('data:image/png;base64,abc'), null);
+  assert.equal(sanitizePublicPhotoUrl('/uploads/local.jpg'), null);
+  assert.equal(sanitizePublicPhotoUrl('  '), null);
+  assert.equal(
+    publicIncidentImageUrl([
+      { image_path: 'https://storage.example/old.jpg', created_at: 10 },
+      { image_path: 'javascript:alert(1)', created_at: 30 },
+      { image_path: 'https://storage.example/new.jpg', created_at: 20 },
+    ]),
+    'https://storage.example/new.jpg',
+  );
+  assert.equal(publicIncidentImageUrl([]), null);
+  assert.equal(publicIncidentImageUrl([{ image_path: 'not-a-url', created_at: 1 }]), null);
 });
