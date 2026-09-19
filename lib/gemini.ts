@@ -3,7 +3,7 @@ import 'server-only';
 import { PROMPT, SCHEMA, parseGemini, imageMime, MAX_IMAGE_BYTES } from './hazard-analysis.mjs';
 
 export const ANALYSIS_TIMEOUT_MS = 8_000;
-const DEFAULT_MODEL = 'gemini-3.1-flash-lite';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 
 type FailureCode = 'configuration' | 'credentials' | 'invalid_request' | 'rate_limited'
   | 'model_unavailable' | 'provider_unavailable' | 'timeout' | 'network_error'
@@ -104,6 +104,9 @@ export class GeminiService {
                 : {}),
               ...(['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite'].includes(model)
                 ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } }
+                : {}),
+              ...(model === 'gemini-3.8-flash'
+                ? { thinkingConfig: { thinkingLevel: 'low' } }
                 : {}),
               // Use the established generateContent JSON Schema fields.
               responseMimeType: 'application/json',
