@@ -1,54 +1,8 @@
-export interface Destination {
-  id: string;
-  displayName: string;
-  jurisdiction: 'city' | 'state' | 'utility' | 'regional' | 'federal';
-  phone?: string | null;
-  phoneOutside?: string;
-  intakeUrl?: string | null;
-  description: string;
-  fallbackTo?: string;
-  emergencyNote?: string;
-  requiresHumanConfirmation: boolean;
-  lastVerified: string;
-  sourceUrl?: string | null;
+export type Baltimore311Disposition = '311' | 'manual_review' | 'emergency' | 'no_submission';
+export interface Baltimore311Route {
+  service_types: readonly string[];
+  disposition: Baltimore311Disposition;
 }
-
-export const DESTINATIONS: Readonly<Record<string, Destination>>;
-
-export interface RoutingRecommendation {
-  destination: Destination | null;
-  reason: string;
-  urgency: 'emergency' | 'urgent' | 'routine' | 'none' | null;
-  requiresImmediate: boolean;
-  alternates: Destination[];
-}
-
-export function selectDestination(params: {
-  category: string;
-  seriousness?: number | null;
-  subcategory?: string | null;
-}): RoutingRecommendation;
-
-export function getDestination(destinationId: string): Destination | null;
-
-export function getAllDestinations(): Destination[];
-
-export interface RoutingDisplay {
-  primary: {
-    name: string;
-    phone?: string | null;
-    url?: string | null;
-    description: string;
-    emergencyNote?: string;
-  } | null;
-  message: string;
-  urgency: string | null;
-  callToAction: string | null;
-  alternates: Array<{
-    name: string;
-    phone?: string | null;
-    url?: string | null;
-  }>;
-}
-
-export function formatRoutingDisplay(routing: RoutingRecommendation): RoutingDisplay;
+export const BALTIMORE_311_ROUTES: Readonly<Record<string, Baltimore311Route>>;
+export function baltimoreRouteForIncidentType(incidentType: string): Baltimore311Route | undefined;
+export function assertCompleteBaltimoreRouting(): true;
