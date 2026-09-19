@@ -68,8 +68,15 @@ vercel --prod
 ### 4. Add Vercel Blob Storage
 
 1. In the **Storage** tab, click **Create Database** → **Blob**
-2. Click **Create**
-3. Vercel will automatically add `BLOB_READ_WRITE_TOKEN` to your environment variables
+2. Choose your store visibility:
+   - **Public**: Blob URLs are directly accessible (simpler, works for public photos)
+   - **Private**: Blob URLs require authentication (more secure, uses OIDC)
+3. Click **Create**
+4. Vercel will automatically add blob environment variables to your project:
+   - **Classic token auth**: `BLOB_READ_WRITE_TOKEN` (legacy, still supported)
+   - **OIDC auth** (recommended): `BLOB_STORE_ID` or custom-prefixed like `BLOB_READ_WRITE_TOKEN_STORE_ID` + `BLOB_READ_WRITE_TOKEN_WEBHOOK_PUBLIC_KEY`
+
+**Note**: This app supports both public and private Blob stores. When using a private store with OIDC, images are served through the `/api/media` proxy endpoint.
 
 ### 5. Set Required Environment Variables
 
@@ -198,8 +205,10 @@ Rate limits are stored in-memory and reset on deployment. For production scale, 
 
 ### Image Processing
 - Max file size: 10MB
-- Supported formats: JPEG, PNG, WebP
-- Images stored on Vercel Blob (CDN-backed, public URLs)
+- Supported formats: JPEG, PNG, WebP, HEIC, HEIF
+- Images stored on Vercel Blob
+  - Public stores: Direct CDN URLs
+  - Private stores: Served via `/api/media` proxy with OIDC authentication
 
 ### Database Schema
 - `sessions`: User and organizer sessions
@@ -225,7 +234,7 @@ See [.env.example](.env.example) for the complete list.
 
 **Auto-set by Vercel Storage**:
 - `POSTGRES_URL` (and related)
-- `BLOB_READ_WRITE_TOKEN`
+- Blob storage: `BLOB_READ_WRITE_TOKEN` (classic) OR `BLOB_STORE_ID` / `BLOB_READ_WRITE_TOKEN_STORE_ID` (OIDC)
 
 ## Project Structure
 
@@ -252,23 +261,74 @@ lib/
 
 If you see this error during photo upload, it typically means one of the required services is not configured:
 
-1. **Photo storage is not configured (BLOB_READ_WRITE_TOKEN)**
-   - Go to your Vercel project → Storage tab
-   - Create a Blob storage if you haven't already
-   - Redeploy your application
-   - Verify it's working: visit `https://your-app.vercel.app/api/health`
+#### 1. Check Configuration Status
 
-2. **Database is not configured**
-   - Go to your Vercel project → Storage tab
-   - Create a Postgres database if you haven't already
-   - Redeploy your application
-   - Verify it's working: visit `https://your-app.vercel.app/api/health`
+Visit the health check endpoint to diagnose:
+```bash
+curl https://your-app.vercel.app/api/health
+```
 
-3. **Use the health check endpoint**
-   ```
-   curl https://your-app.vercel.app/api/health
-   ```
-   This will show which services are properly configured.
+This returns:
+```json
+{
+  "status": "ok" | "degraded",
+  "checks": {
+    "postgres": true/false,
+    "blob_storage": true/false,
+    "ai_analysis": true/false
+  },
+  "details": ["..."]
+}
+```
+
+#### 2. Blob Storage Not Configured
+
+**Symptoms**: `blob_storage: false` in health check, or error message mentions storage
+
+**Fix**:
+1. Go to your Vercel project → **Storage** tab
+2. Click **Create Database** → **Blob**
+3. Choose visibility (Public or Private)
+4. Click **Create**
+5. Vercel automatically adds the required environment variables:
+   - **Classic auth**: `BLOB_READ_WRITE_TOKEN`
+   - **OIDC auth**: `BLOB_STORE_ID` or `BLOB_READ_WRITE_TOKEN_STORE_ID` + webhook key
+6. **Redeploy** your application (Settings → Deployments → Redeploy)
+7. Verify: `curl https://your-app.vercel.app/api/health`
+
+**OIDC Auth (Advanced Options)**:
+- If you see `BLOB_READ_WRITE_TOKEN_STORE_ID` instead of `BLOB_STORE_ID`, this means the Blob store connection used a custom prefix in Advanced Options
+- The app automatically detects and supports both naming conventions
+- Private stores work correctly via the `/api/media` proxy endpoint
+
+#### 3. Database Not Configured
+
+**Symptoms**: `postgres: false` in health check, or error message mentions database
+
+**Fix**:
+1. Go to your Vercel project → **Storage** tab
+2. Click **Create Database** → **Postgres**
+3. Choose a region close to your users
+4. Click **Create**
+5. Vercel automatically adds `POSTGRES_URL` and related variables
+6. **Redeploy** your application
+7. Verify: `curl https://your-app.vercel.app/api/health`
+
+#### 4. AI Analysis Failures (Soft Failure)
+
+**Symptoms**: Images upload successfully but `analysis: null` in response
+
+AI analysis failures are **non-blocking** — your images are always saved even if Gemini fails.
+
+**Common causes**:
+- Missing or invalid `GEMINI_API_KEY`
+- Gemini API quota exceeded
+- Analysis timeout (8 seconds)
+
+**Fix**:
+1. Verify your API key: [Google AI Studio](https://aistudio.google.com/apikey)
+2. Check quotas in Google AI Studio
+3. Images are still saved and usable even without AI analysis
 
 ### Camera not working on iPhone
 - Ensure you're accessing via **HTTPS** (Vercel provides this)
@@ -281,9 +341,13 @@ If you see this error during photo upload, it typically means one of the require
 - Tables are auto-created on first use
 
 ### Image upload fails
-- Verify `BLOB_READ_WRITE_TOKEN` is set (added by Vercel Storage)
+- Verify blob storage is configured (use `/api/health` endpoint)
+- Check environment variables:
+  - Classic: `BLOB_READ_WRITE_TOKEN`
+  - OIDC: `BLOB_STORE_ID` or `BLOB_READ_WRITE_TOKEN_STORE_ID`
 - Check file size (max 10MB)
 - Check Vercel Blob dashboard for storage quota
+- After adding Blob storage, always **redeploy**
 
 ### AI analysis returns null
 - Verify `GEMINI_API_KEY` is valid

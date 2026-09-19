@@ -13,7 +13,14 @@ export class HealthCheckService {
       process.env.POSTGRES_URL_NON_POOLING
     );
     
-    const blob = !!process.env.BLOB_READ_WRITE_TOKEN;
+    // Check for Blob storage configuration
+    // Supports classic token auth (BLOB_READ_WRITE_TOKEN) and OIDC auth (BLOB_STORE_ID or BLOB_READ_WRITE_TOKEN_STORE_ID)
+    const blob = !!(
+      process.env.BLOB_READ_WRITE_TOKEN ||
+      process.env.BLOB_STORE_ID ||
+      process.env.BLOB_READ_WRITE_TOKEN_STORE_ID
+    );
+    
     const gemini = !!process.env.GEMINI_API_KEY;
     
     const details: string[] = [];
@@ -23,7 +30,7 @@ export class HealthCheckService {
     }
     
     if (!blob) {
-      details.push('BLOB_READ_WRITE_TOKEN is not configured');
+      details.push('Blob storage is not configured (need BLOB_READ_WRITE_TOKEN, BLOB_STORE_ID, or BLOB_READ_WRITE_TOKEN_STORE_ID)');
     }
     
     if (!gemini) {

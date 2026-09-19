@@ -123,9 +123,10 @@ export async function POST(req: NextRequest) {
       console.error('Blob storage error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       
-      if (errorMessage.includes('BLOB_READ_WRITE_TOKEN')) {
+      // Check for missing blob configuration
+      if (errorMessage.includes('BLOB_READ_WRITE_TOKEN') || errorMessage.includes('token') || errorMessage.includes('store')) {
         return NextResponse.json(
-          { error: 'Photo storage is not configured (BLOB_READ_WRITE_TOKEN). Please contact support.' },
+          { error: 'Photo storage is not configured. Please ensure Vercel Blob is connected (needs BLOB_READ_WRITE_TOKEN, BLOB_STORE_ID, or BLOB_READ_WRITE_TOKEN_STORE_ID).' },
           { status: 503 }
         );
       }
