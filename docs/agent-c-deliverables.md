@@ -5,9 +5,25 @@
 **PR:** [#12](https://github.com/gitpaperclip/oneminuteutopia/pull/12)  
 **Branch:** `cursor/priority-2-3-description-routing-98e0`
 
+## ⚠️ CRITICAL: NO API SUBMISSION
+
+**Baltimore 311 API DOES NOT WORK.** These modules provide routing INFORMATION only:
+- Which agency handles each issue type
+- Contact phone numbers and URLs
+- Structured descriptions for human reference
+
+**These modules DO NOT and WILL NOT:**
+- ❌ Call any Baltimore 311 API
+- ❌ Call any Open311 API
+- ❌ Submit to any city portal
+- ❌ Automate any city website
+- ❌ Claim submission happened
+
+**User must manually contact the destination** via phone or in-person.
+
 ## Executive Summary
 
-Implemented three pure, deterministic modules for incident taxonomy, Baltimore routing, and description building. All modules are fully tested (106 tests passing), type-safe, and ready for Agent B's prepare-311 integration.
+Implemented three pure, deterministic modules for incident taxonomy, Baltimore routing, and description building. All modules provide **catalog information only** - no API calls, no submissions. Fully tested (106 tests passing), type-safe, and ready for Agent B's prepare-311 integration.
 
 ## Deliverables
 
@@ -42,11 +58,14 @@ const urgency = getUrgency(7);
 Pure routing selector based on official Baltimore City catalog.
 
 **Exports:**
-- `DESTINATIONS` - Frozen object with all agency contact info
-- `selectDestination({ category, seriousness, subcategory })` - Select destination
+- `DESTINATIONS` - Frozen object with all agency contact info (phone/URL for manual contact)
+- `selectDestination({ category, seriousness, subcategory })` - Get routing info (NO submission)
 - `getDestination(destinationId)` - Get destination by ID
 - `getAllDestinations()` - Get all destinations
 - `formatRoutingDisplay(routing)` - Format for UI display
+
+**Returns routing INFORMATION only** - which agency, phone number, website URL.
+User must call or visit in person. No API submission.
 
 **Example:**
 ```javascript
@@ -82,12 +101,14 @@ const display = formatRoutingDisplay(routing);
 Pure text generation for 311 reports.
 
 **Exports:**
-- `buildDescription(params)` - Build full structured description
+- `buildDescription(params)` - Build full structured description (for human review)
 - `buildTitle(params)` - Build short title
 - `buildSummary(params)` - Build one-line summary
-- `buildStructuredFields(params)` - Build Open311 fields
+- `buildReportFields(params)` - Build structured fields (for human reference, NOT API)
 - `validateDescriptionInput(text)` - Validate and sanitize user input
 - `buildEmergencyGuidance(category, seriousness)` - Build emergency text
+
+**Generates human-readable text only.** Does NOT submit to any API.
 
 **Example:**
 ```javascript
@@ -103,7 +124,8 @@ const desc = buildDescription({
   locationSource: 'gps',
   categoryWasCorrected: false,
 });
-// → Multi-line formatted description ready for 311 submission
+// → Multi-line formatted description for human review
+// User must call 311 or visit in person to report
 
 const title = buildTitle({
   category: 'roads_and_sidewalks',
@@ -142,27 +164,31 @@ const guidance = buildEmergencyGuidance('fire_injury_or_immediate_threat', 8);
 
 ## Integration Guide for Agent B
 
-To use these modules in prepare-311:
+To use these modules in prepare-311 (routing info only, NO API submission):
 
 ```javascript
 // 1. Import modules
 import { selectDestination } from './lib/baltimore-311-routing.mjs';
-import { buildDescription, buildStructuredFields } from './lib/description-builder.mjs';
+import { buildDescription, buildReportFields } from './lib/description-builder.mjs';
 import { getTaxonomy } from './lib/incident-taxonomy.mjs';
 
-// 2. Get routing recommendation
+// 2. Get routing INFORMATION (NO submission)
 const routing = selectDestination({
   category: analysisResult.category,
   seriousness: analysisResult.seriousness,
   subcategory: userSelectedSubcategory, // optional
 });
 
-// 3. Check if emergency (block submission, show 911)
+// 3. Check if emergency (block UI, show 911 call instruction)
 if (routing.requiresImmediate && routing.destination?.id === '911') {
-  return { error: 'EMERGENCY_CALL_911', guidance: buildEmergencyGuidance(...) };
+  return { 
+    error: 'EMERGENCY_CALL_911', 
+    guidance: buildEmergencyGuidance(...),
+    message: 'Call 911 immediately. Do not use this app for emergencies.'
+  };
 }
 
-// 4. Build description
+// 4. Build description (for human reference)
 const description = buildDescription({
   category: analysisResult.category,
   seriousness: analysisResult.seriousness,
@@ -174,8 +200,8 @@ const description = buildDescription({
   categoryWasCorrected: reportInput.category !== analysisResult.category,
 });
 
-// 5. Build structured fields (for Open311 API)
-const fields = buildStructuredFields({
+// 5. Build structured fields (for human review, NOT API submission)
+const fields = buildReportFields({
   category: reportInput.category,
   subcategory: userSelectedSubcategory,
   userDescription: reportInput.user_description,
@@ -184,12 +210,13 @@ const fields = buildStructuredFields({
   locationAddress: reportInput.location_address,
 });
 
-// 6. Return prepare-311 result
+// 6. Return prepare-311 result with CLEAR INSTRUCTIONS for manual reporting
 return {
-  destination: routing.destination,
-  description,
-  structuredFields: fields,
-  requiresHumanConfirmation: routing.destination.requiresHumanConfirmation,
+  destination: routing.destination, // Contains phone and URL
+  description, // For user to read when calling
+  reportFields: fields, // Summary of info to mention
+  instructions: `Call ${routing.destination.phone} to report this issue. Have this information ready.`,
+  warningMessage: 'This app does not submit reports automatically. You must contact the agency yourself.',
 };
 ```
 
@@ -223,8 +250,8 @@ All routing decisions are based on official sources:
 
 1. **Agent B** can now import these modules for prepare-311 implementation
 2. Consider adding subcategory selection UI (Agent A/B coordination)
-3. Future: Open311 API integration using `buildStructuredFields()`
-4. Future: Add more state/utility destinations as needed
+3. UI must clearly state: "This app provides information only. You must contact the agency to report."
+4. Future: Add more state/utility destinations as needed (still info-only)
 
 ## Files Changed
 
@@ -247,9 +274,9 @@ tests/
 
 ## Questions for Agent B
 
-1. Do you need additional fields in `buildStructuredFields()` for Open311 spec?
+1. Do you need additional fields in `buildReportFields()` for the human reference summary?
 2. Should subcategory selection be required or optional in the UI?
-3. Do you need a helper to compare routing destination with existing reports (duplicate detection)?
+3. How should we display "call this number" vs "visit this website" instructions?
 4. Should we add a `buildShareableLink()` for receipts with embedded routing info?
 
 ---

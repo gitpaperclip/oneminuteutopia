@@ -4,7 +4,7 @@ import {
   buildDescription,
   buildTitle,
   buildSummary,
-  buildStructuredFields,
+  buildReportFields,
   validateDescriptionInput,
   buildEmergencyGuidance,
 } from '../lib/description-builder.mjs';
@@ -206,8 +206,8 @@ test('buildSummary handles special categories', () => {
   assert.ok(noHazard.includes('No visible hazard'));
 });
 
-test('buildStructuredFields creates API-ready fields', () => {
-  const fields = buildStructuredFields({
+test('buildReportFields creates human-readable fields (NO API submission)', () => {
+  const fields = buildReportFields({
     category: 'roads_and_sidewalks',
     subcategory: 'pothole',
     userDescription: 'Large pothole',
@@ -216,26 +216,26 @@ test('buildStructuredFields creates API-ready fields', () => {
     locationAddress: '123 Main St',
   });
 
-  assert.equal(fields.service_code, 'pothole');
+  assert.equal(fields.issue_type, 'pothole');
   assert.equal(fields.description, 'Large pothole');
-  assert.equal(fields.lat, 39.2904);
-  assert.equal(fields.long, -76.6122);
-  assert.equal(fields.address_string, '123 Main St');
-  assert.equal(fields.media_url, null);
+  assert.equal(fields.latitude, 39.2904);
+  assert.equal(fields.longitude, -76.6122);
+  assert.equal(fields.address, '123 Main St');
+  assert.ok(fields.photo_note.includes('Photo available'));
 });
 
-test('buildStructuredFields uses category when no subcategory', () => {
-  const fields = buildStructuredFields({
+test('buildReportFields uses category when no subcategory', () => {
+  const fields = buildReportFields({
     category: 'other_hazard',
     userDescription: 'Hazardous condition',
   });
 
-  assert.equal(fields.service_code, 'other_hazard');
+  assert.equal(fields.issue_type, 'other_hazard');
   assert.equal(fields.description, 'Hazardous condition');
 });
 
-test('buildStructuredFields handles missing description', () => {
-  const fields = buildStructuredFields({
+test('buildReportFields handles missing description', () => {
+  const fields = buildReportFields({
     category: 'trash_and_sanitation',
   });
 

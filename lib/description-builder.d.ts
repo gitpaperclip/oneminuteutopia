@@ -21,7 +21,7 @@ export function buildSummary(params: {
   subcategory?: string | null;
 }): string;
 
-export function buildStructuredFields(params: {
+export function buildReportFields(params: {
   category: string;
   subcategory?: string | null;
   userDescription?: string | null;
@@ -29,12 +29,12 @@ export function buildStructuredFields(params: {
   longitude?: number | null;
   locationAddress?: string | null;
 }): {
-  service_code: string;
+  issue_type: string;
   description: string;
-  lat: number | null;
-  long: number | null;
-  address_string: string | null;
-  media_url: null;
+  latitude: number | null;
+  longitude: number | null;
+  address: string | null;
+  photo_note: string;
 };
 
 export function validateDescriptionInput(
