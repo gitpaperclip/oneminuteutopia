@@ -43,6 +43,7 @@ export default function HomePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
+  const [cameraDenied, setCameraDenied] = useState(false);
 
   const [category, setCategory] = useState('');
   const [note, setNote] = useState('');
@@ -78,7 +79,7 @@ export default function HomePage() {
   const startCamera = useCallback(async () => {
     setError(null);
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      setError('Camera needs HTTPS. Use upload.');
+      setCameraDenied(true);
       return;
     }
     killCamera();
@@ -97,23 +98,29 @@ export default function HomePage() {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
       streamRef.current = stream;
+      setCameraDenied(false);
       setCameraOn(true);
-      const video = videoRef.current;
-      if (video) {
-        video.srcObject = stream;
-        await video.play().catch(() => undefined);
-      }
     } catch {
       killCamera();
-      setError('Camera blocked. Upload a photo.');
+      setCameraDenied(true);
     }
   }, [killCamera]);
 
   useEffect(() => {
-    if (step === 'capture' && !cameraOn && !busy && !preview) {
+    if (step === 'capture' && !cameraOn && !busy && !preview && !cameraDenied) {
       void startCamera();
     }
-  }, [step, cameraOn, busy, preview, startCamera]);
+  }, [step, cameraOn, busy, preview, cameraDenied, startCamera]);
+
+  useEffect(() => {
+    if (!cameraOn || preview || step !== 'capture') return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+    if (video.srcObject !== stream) video.srcObject = stream;
+    void video.play().catch(() => undefined);
+  }, [cameraOn, preview, step]);
+
 
   const runUpload = async (file: File) => {
     const id = ++gen.current;
@@ -260,18 +267,49 @@ export default function HomePage() {
     <div className="app-shell">
       {step === 'capture' && (
         <section className="capture-stage" aria-label="Capture">
-          <img src="/logo-mark.png" alt="1MU" className="logo-mark" width={40} height={40} />
+          <img src="/logo-mark.png" alt="1MU" className="logo-mark" width={64} height={64} />
           <div className="camera-bleed">
-            {cameraOn ? (
-              <video ref={videoRef} className="camera-video" autoPlay playsInline muted />
-            ) : preview ? (
+            {preview ? (
               <img src={preview} alt="" className="camera-video" />
             ) : (
-              <div className="camera-placeholder" />
+              <video ref={videoRef} className="camera-video" autoPlay playsInline muted />
             )}
             {busy && (
               <div className="busy-overlay" role="status">
                 <span className="spinner" />
+              </div>
+            )}
+            {cameraDenied && !preview && !busy && (
+              <div
+                className="analysis-popup"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="camera-denied-title"
+                style={{ ['--sev-accent' as string]: '#2563eb', ['--sev-fill' as string]: '#dbeafe' }}
+              >
+                <div className="analysis-card">
+                  <p className="analysis-kicker">Camera</p>
+                  <h2 id="camera-denied-title" className="analysis-category">
+                    Allow camera access to submit a report
+                  </h2>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-block"
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    Upload photo
+                  </button>
+                  <button
+                    type="button"
+                    className="text-btn camera-retry"
+                    onClick={() => {
+                      setCameraDenied(false);
+                      void startCamera();
+                    }}
+                  >
+                    Try again
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -291,9 +329,7 @@ export default function HomePage() {
               disabled={busy || !cameraOn}
               onClick={() => void shutter()}
             />
-            <button type="button" className="btn-ghost" disabled={busy} onClick={() => void startCamera()}>
-              Cam
-            </button>
+            <span aria-hidden="true" className="capture-bar-spacer" />
           </div>
           <input
             ref={fileRef}
@@ -312,7 +348,7 @@ export default function HomePage() {
 
       {step === 'analysis' && upload && preview && (
         <section className="analysis-stage">
-          <img src="/logo-mark.png" alt="1MU" className="logo-mark" width={40} height={40} />
+          <img src="/logo-mark.png" alt="1MU" className="logo-mark" width={64} height={64} />
           <img src={preview} alt="" className="analysis-photo" />
           {upload.analysis_status === 'unavailable' && (
             <p className="toast-warn">{upload.warning || 'AI unavailable — pick a category next.'}</p>
