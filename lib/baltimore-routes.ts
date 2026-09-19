@@ -1,5 +1,10 @@
 import { CATEGORY_LABELS } from './analysis-labels.ts';
 
+/** Contacts copy for receipts and handoff chips. Edit notes/phones/reportUrl here.
+ *  Longer agency narrative: docs/baltimore-reporting-catalog.md
+ *  Map sheet chrome: lib/map-copy.ts
+ */
+
 export interface HandoffPhone {
   number: string;
   label?: string;

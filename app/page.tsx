@@ -3,9 +3,9 @@
 /* eslint-disable @next/next/no-img-element -- camera + blob previews */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnalysisCard } from '@/components/AnalysisCard';
+import { AppTopBar, MapNavLink } from '@/components/AppTopBar';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import {
   CATEGORY_OPTIONS,
@@ -435,8 +435,8 @@ export default function HomePage() {
   return (
     <div className="app-shell">
       {step === 'capture' && (
-        <section className="capture-stage" aria-label="Capture">
-          <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
+        <section className="capture-stage has-topbar" aria-label="Capture">
+          <AppTopBar right={<MapNavLink />} />
           <div className="camera-bleed" ref={bleedRef}>
             <video
               ref={videoRef}
@@ -531,9 +531,7 @@ export default function HomePage() {
                   <ConfirmIcon />
                 </button>
               </div>
-              <Link href="/map" className="btn-ghost" style={{ justifySelf: 'end' }} aria-label="Open incident map">
-                Map
-              </Link>
+              <span className="capture-bar-spacer" />
             </div>
           )}
           <input
@@ -552,12 +550,16 @@ export default function HomePage() {
 
       {step === 'analysis' && upload && preview && (
         <section className="analysis-page" aria-labelledby="analysis-title">
-          <header className="page-header">
-            <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
-            <button type="button" className="text-btn" onClick={askLeaveReport}>
-              Back
-            </button>
-          </header>
+          <AppTopBar
+            right={
+              <>
+                <MapNavLink />
+                <button type="button" className="app-topbar-text" onClick={askLeaveReport}>
+                  Back
+                </button>
+              </>
+            }
+          />
           <div className="analysis-page-body">
             <div className="analysis-stack">
               {upload.analysis_status === 'unavailable' && (
@@ -601,12 +603,16 @@ export default function HomePage() {
 
       {step === 'confirm' && upload && (
         <section className="confirm-stage" aria-label="Confirm report">
-          <header className="page-header">
-            <img src="/logo-mark.png?v=3" alt="1MU" className="logo-mark" width={48} height={48} />
-            <button type="button" className="text-btn" onClick={askLeaveReport}>
-              Back
-            </button>
-          </header>
+          <AppTopBar
+            right={
+              <>
+                <MapNavLink />
+                <button type="button" className="app-topbar-text" onClick={askLeaveReport}>
+                  Back
+                </button>
+              </>
+            }
+          />
           <div className="confirm-body">
             <div className="confirm-form">
               {preview && <img src={preview} alt="" className="confirm-thumb" />}

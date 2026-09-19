@@ -4,7 +4,7 @@ import { DatabaseService } from '@/lib/db';
 import { CONTEXT_TAGS, INCIDENT_TYPES } from '@/lib/incident-taxonomy.mjs';
 import { HttpError } from '@/lib/hazard-analysis.mjs';
 import {
-  parseBboxQuery, parseBooleanQuery, parseLimitQuery,
+  parseBboxQuery, parseBooleanQuery, parseLimitQuery, sliceIncidentsPage,
   toMapIncident, toPublicIncidentReports, type MapIncidentsResponse,
 } from '@/lib/map-incident-types';
 
@@ -45,9 +45,15 @@ export async function GET(req: NextRequest) {
     const bbox = parseBboxQuery(query);
     const limit = parseLimitQuery(query.get('limit'));
     const incidents = await DatabaseService.listIncidents({
-      category, incidentType, tag, commonOnly, includeUnlocated, limit, ...bbox,
+      category, incidentType, tag, commonOnly, includeUnlocated, limit: limit + 1, ...bbox,
     });
-    const body: MapIncidentsResponse = { incidents: incidents.map(toMapIncident) };
+    const page = sliceIncidentsPage(incidents, limit);
+    const body: MapIncidentsResponse = {
+      incidents: page.items.map(toMapIncident),
+      limit,
+      returned: page.items.length,
+      truncated: page.truncated,
+    };
     return NextResponse.json(body, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     const known = error instanceof HttpError;

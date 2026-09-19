@@ -5,12 +5,14 @@ export interface MapIncident {
   category: string;
   incident_type: string | null;
   short_label: string;
+  full_description: string | null;
   latitude: number | null;
   longitude: number | null;
   location_address: string | null;
   status: string;
   severity: string;
   evidence_count: number;
+  confirmation_count: number;
   highest_seriousness: number | null;
   average_ai_confidence: number | null;
   tags: string[];
@@ -23,6 +25,19 @@ export interface MapIncident {
 
 export interface MapIncidentsResponse {
   incidents: MapIncident[];
+  limit: number;
+  returned: number;
+  truncated: boolean;
+}
+
+export interface IncidentConfirmationState {
+  confirmation_count: number;
+  viewer_confirmed: boolean;
+}
+
+export function sliceIncidentsPage<T>(rows: T[], limit: number): { items: T[]; truncated: boolean } {
+  const truncated = rows.length > limit;
+  return { items: truncated ? rows.slice(0, limit) : rows, truncated };
 }
 
 export interface IncidentBbox {
@@ -37,12 +52,14 @@ export function toMapIncident(incident: {
   category: string;
   incident_type: string | null;
   short_label: string;
+  full_description?: string | null;
   latitude: number | null;
   longitude: number | null;
   location_address: string | null;
   status: string;
   severity: string;
   evidence_count: number;
+  confirmation_count?: number | null;
   highest_seriousness: number | null;
   average_ai_confidence: number | null;
   tags: string[] | null;
@@ -51,18 +68,24 @@ export function toMapIncident(incident: {
   updated_at: number;
   last_reported_at: number | null;
 }): MapIncident {
+  const seriousness =
+    typeof incident.highest_seriousness === 'number' && Number.isFinite(incident.highest_seriousness)
+      ? incident.highest_seriousness
+      : null;
   return {
     id: incident.id,
     category: incident.category,
     incident_type: incident.incident_type,
     short_label: incident.short_label,
+    full_description: incident.full_description ?? null,
     latitude: incident.latitude,
     longitude: incident.longitude,
     location_address: incident.location_address,
     status: incident.status,
     severity: incident.severity,
     evidence_count: incident.evidence_count,
-    highest_seriousness: incident.highest_seriousness,
+    confirmation_count: incident.confirmation_count ?? 0,
+    highest_seriousness: seriousness,
     average_ai_confidence: incident.average_ai_confidence,
     tags: incident.tags ?? [],
     routing_disposition: incident.routing_disposition,

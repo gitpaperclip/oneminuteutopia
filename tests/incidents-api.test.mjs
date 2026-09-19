@@ -6,7 +6,7 @@ import { DatabaseService } from '../lib/db.ts';
 import { validateReportInput } from '../lib/report-input.ts';
 import { HttpError } from '../lib/hazard-analysis.mjs';
 import {
-  parseBboxQuery, parseBooleanQuery, parseLimitQuery,
+  parseBboxQuery, parseBooleanQuery, parseLimitQuery, sliceIncidentsPage,
   toMapIncident, toPublicIncidentReports,
 } from '../lib/map-incident-types.ts';
 
@@ -15,13 +15,15 @@ const migrations = await Promise.all([
   '202609190001_image_analyses.sql',
   '202609190002_incident_context_and_clustering.sql',
   '202609190003_baltimore_311_routing.sql',
+  '202609190004_mock_government_submission.sql',
+  '202609190005_incident_confirmations.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 const MAP_INCIDENT_KEYS = [
-  'id', 'category', 'incident_type', 'short_label', 'latitude', 'longitude',
-  'location_address', 'status', 'severity', 'evidence_count', 'highest_seriousness',
-  'average_ai_confidence', 'tags', 'routing_disposition', 'created_at', 'updated_at',
-  'last_reported_at', 'is_super_report',
+  'id', 'category', 'incident_type', 'short_label', 'full_description', 'latitude', 'longitude',
+  'location_address', 'status', 'severity', 'evidence_count', 'confirmation_count',
+  'highest_seriousness', 'average_ai_confidence', 'tags', 'routing_disposition',
+  'created_at', 'updated_at', 'last_reported_at', 'is_super_report',
 ];
 
 function connect(db) {
@@ -90,6 +92,7 @@ test('two nearby same-type reports become one mappable super-report', async t =>
   assertMapIncidentShape(mapped);
   assert.equal(mapped.id, first.report.incident_id);
   assert.equal(mapped.evidence_count, 2);
+  assert.equal(mapped.confirmation_count, 0);
   assert.equal(mapped.is_super_report, true);
   assert.equal(mapped.latitude !== null && mapped.longitude !== null, true);
   assertNoSessionLeak({ incidents: [mapped] }, [sessionA, sessionB]);
@@ -163,6 +166,36 @@ test('bbox and flag parsers reject inverted or non-numeric values', () => {
   assert.equal(parseBooleanQuery('true', 'include_unlocated'), true);
   assert.equal(parseLimitQuery(null), 50);
   assert.throws(() => parseLimitQuery('0'), error => error.status === 400);
+  const page = sliceIncidentsPage(['a', 'b', 'c'], 2);
+  assert.deepEqual(page.items, ['a', 'b']);
+  assert.equal(page.truncated, true);
+  assert.equal(sliceIncidentsPage(['a'], 2).truncated, false);
+});
+
+test('missing seriousness stays null on the public map incident', () => {
+  const mapped = toMapIncident({
+    id: 'incident-unscored',
+    category: 'unable_to_assess',
+    incident_type: 'unable_to_assess',
+    short_label: 'Unable to assess',
+    full_description: null,
+    latitude: 39.29,
+    longitude: -76.61,
+    location_address: null,
+    status: 'reported',
+    severity: 'normal',
+    evidence_count: 1,
+    confirmation_count: 0,
+    highest_seriousness: null,
+    average_ai_confidence: null,
+    tags: [],
+    routing_disposition: 'manual_review',
+    created_at: 1,
+    updated_at: 1,
+    last_reported_at: 1,
+  });
+  assert.equal(mapped.highest_seriousness, null);
+  assert.equal(mapped.is_super_report, false);
 });
 
 test('public list and drill-down payloads never include session identifiers', async t => {

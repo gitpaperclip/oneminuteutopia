@@ -11,6 +11,7 @@ const migrations = await Promise.all([
   '202609190002_incident_context_and_clustering.sql',
   '202609190003_baltimore_311_routing.sql',
   '202609190004_mock_government_submission.sql',
+  '202609190005_incident_confirmations.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 function connect(db) {

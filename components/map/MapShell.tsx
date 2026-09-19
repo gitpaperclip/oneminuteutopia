@@ -1,26 +1,32 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element -- public mark, matching the rest of the app */
-
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CATEGORY_LABELS } from '@/lib/analysis-labels';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { IncidentBbox, MapIncident } from '@/lib/map-incident-types';
+import {
+  MAP_COPY,
+  confirmationTotalLabel,
+  incidentSheetDescription,
+  incidentSheetTitle,
+  superReportBadge,
+  unmappedEmptyBody,
+} from '@/lib/map-copy';
 import { formatSeverity } from '@/lib/severity';
 import { formatTimestamp } from '@/lib/utils';
+import { AppTopBar } from '@/components/AppTopBar';
 import { MapFilters } from '@/components/map/MapFilters';
 import {
+  fetchConfirmation,
   fetchMapIncidents,
-  formatConfidence,
   incidentsQuery,
   isEmergencyIncident,
   mappableIncidents,
   parseMapFilters,
   roundBbox,
   sameBbox,
-  slugLabel,
+  setConfirmation,
   urlFiltersQuery,
   type MapListFilters,
 } from '@/components/map/incidents';
@@ -28,9 +34,11 @@ import {
 const IncidentMap = dynamic(() => import('@/components/map/IncidentMap'), {
   ssr: false,
   loading: () => (
-    <div className="grid h-full place-items-center text-sm text-slate-500">Loading map…</div>
+    <div className="grid h-full place-items-center text-sm text-slate-500">{MAP_COPY.loading}</div>
   ),
 });
+
+const STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? '';
 
 export function MapShell() {
   const router = useRouter();
@@ -42,15 +50,18 @@ export function MapShell() {
   const filters = useMemo(() => ({ ...urlFilters, bbox }), [urlFilters, bbox]);
   const queryKey = incidentsQuery(filters);
   const [incidents, setIncidents] = useState<MapIncident[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [loadedUrlKey, setLoadedUrlKey] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const waitingForBounds = !bbox && !allowUnbounded;
   const loading = waitingForBounds || loadedUrlKey !== urlKey;
   const refreshing = !loading && loadedKey !== queryKey;
   const bboxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locateRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (bbox) return;
@@ -62,16 +73,20 @@ export function MapShell() {
     if (!bbox && !allowUnbounded) return;
     const controller = new AbortController();
     fetchMapIncidents(filters, controller.signal)
-      .then((rows) => {
-        setIncidents(rows);
+      .then((payload) => {
+        setIncidents(payload.incidents);
+        setTruncated(payload.truncated);
         setError(null);
         setLoadedKey(queryKey);
         setLoadedUrlKey(urlKey);
-        setSelectedId((current) => (current && rows.some((row) => row.id === current) ? current : null));
+        setSelectedId((current) =>
+          current && payload.incidents.some((row) => row.id === current) ? current : null,
+        );
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setIncidents(null);
+        setTruncated(false);
         setError(cause instanceof Error ? cause.message : 'Incident data is temporarily unavailable.');
         setLoadedKey(queryKey);
         setLoadedUrlKey(urlKey);
@@ -97,52 +112,72 @@ export function MapShell() {
     router.replace(`/map?${urlFiltersQuery(next)}`, { scroll: false });
   };
 
-  return (
-    <div className="relative h-dvh w-full overflow-hidden bg-slate-100">
-      <div className="absolute inset-0">
-        <IncidentMap
-          incidents={pins}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onBounds={onBounds}
-        />
-      </div>
+  const updateConfirmationCount = useCallback((incidentId: string, count: number) => {
+    setIncidents((rows) =>
+      rows?.map((row) => (row.id === incidentId ? { ...row, confirmation_count: count } : row)) ?? null,
+    );
+  }, []);
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-[1100] p-3">
-        <div className="pointer-events-auto mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <img src="/logo-mark.png?v=3" alt="1MU" width={32} height={32} />
-              <div>
-                <h1 className="text-base font-bold text-slate-900">Live incident map</h1>
-                <p className="text-xs text-slate-500">
-                  {loading
-                    ? 'Loading GET /api/incidents…'
-                    : visibleError
-                      ? 'Could not read the live incident API'
-                      : refreshing
-                        ? 'Updating pins for this view…'
-                        : `${pins.length} pin${pins.length === 1 ? '' : 's'} from saved incidents`}
-                  {unmapped > 0 ? ` · ${unmapped} without GPS` : ''}
-                </p>
-              </div>
-            </div>
-            <Link href="/" className="text-btn">
-              Report
+  const statusLabel = loading
+    ? MAP_COPY.loading
+    : visibleError
+      ? MAP_COPY.apiErrorTitle
+      : refreshing
+        ? 'Updating this view…'
+        : `${pins.length} nearby`;
+
+  return (
+    <div className="map-shell">
+      <AppTopBar
+        right={
+          <>
+            <MapFilters
+              filters={urlFilters}
+              expanded={filtersOpen}
+              onToggle={() => setFiltersOpen((open) => !open)}
+              onChange={(next) => {
+                applyFilters(next);
+              }}
+            />
+            <Link href="/" className="app-topbar-text">
+              {MAP_COPY.report}
             </Link>
-          </div>
-          <MapFilters filters={urlFilters} onChange={applyFilters} />
-          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-500">
-            <span><span className="mr-1 inline-block size-2.5 rounded-full bg-blue-600" />Ordinary</span>
-            <span><span className="mr-1 inline-block size-2.5 rounded-full bg-amber-500" />Super-report</span>
-            <span><span className="mr-1 inline-block size-2.5 rounded-full bg-red-600" />Emergency</span>
+          </>
+        }
+      />
+
+      <div className="map-stage">
+        {STYLE_URL ? (
+          <IncidentMap
+            styleUrl={STYLE_URL}
+            incidents={pins}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setFiltersOpen(false);
+            }}
+            onBounds={onBounds}
+            locateRef={locateRef}
+          />
+        ) : (
+          <EmptyCard title={MAP_COPY.configErrorTitle} body={MAP_COPY.configErrorBody} />
+        )}
+
+        {STYLE_URL && (
+          <p className="map-status-chip" aria-live="polite">
+            {statusLabel}
+            {unmapped > 0 ? ` · ${unmapped} without GPS` : ''}
           </p>
-          {visibleError && (
-            <p className="toast-error mt-2 flex items-center justify-between gap-3 rounded-xl" role="alert">
-              <span>{visibleError}</span>
+        )}
+
+        {visibleError && (
+          <EmptyCard
+            title={MAP_COPY.apiErrorTitle}
+            body={visibleError}
+            action={
               <button
                 type="button"
-                className="text-btn"
+                className="btn btn-primary btn-block"
                 onClick={() => {
                   setLoadedKey(null);
                   setLoadedUrlKey(null);
@@ -151,99 +186,173 @@ export function MapShell() {
               >
                 Retry
               </button>
-            </p>
-          )}
-        </div>
-      </div>
+            }
+          />
+        )}
 
-      {loading && (
-        <div className="pointer-events-none absolute inset-0 z-[1050] grid place-items-center bg-white/35">
-          <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow">
-            Loading live incidents…
+        {truncated && !loading && !visibleError && (
+          <p className="map-status-chip" style={{ top: 48 }} role="status">
+            {MAP_COPY.truncated}
+          </p>
+        )}
+
+        {loading && STYLE_URL && (
+          <div className="pointer-events-none absolute inset-0 z-[9] grid place-items-center bg-white/25">
+            <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow">
+              {MAP_COPY.loading}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {!loading && !visibleError && visible && visible.length === 0 && (
-        <EmptyCard
-          title="No incidents in this view"
-          body="This map only plots real GET /api/incidents centroids. Pan the map or submit a photo report with GPS — there are no fixture pins."
-        />
-      )}
+        {!loading && !visibleError && visible && visible.length === 0 && STYLE_URL && (
+          <EmptyCard title={MAP_COPY.emptyTitle} body={MAP_COPY.emptyBody} />
+        )}
 
-      {!loading && !visibleError && visible && visible.length > 0 && pins.length === 0 && (
-        <EmptyCard
-          title="Saved incidents have no map coordinates"
-          body={`${visible.length} incident${visible.length === 1 ? '' : 's'} loaded from the database, but none include a centroid lat/lon. Submit a report with GPS to drop a pin.`}
-        />
-      )}
+        {!loading && !visibleError && visible && visible.length > 0 && pins.length === 0 && (
+          <EmptyCard title={MAP_COPY.unmappedTitle} body={unmappedEmptyBody(visible.length)} />
+        )}
 
-      {selected && (
-        <aside className="pointer-events-none absolute inset-x-0 bottom-0 z-[1100] p-3">
-          <article className="pointer-events-auto mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                  {CATEGORY_LABELS[selected.category] ?? slugLabel(selected.category)}
-                </p>
-                <h2 className="text-lg font-bold text-slate-900">{selected.short_label}</h2>
-              </div>
-              <button type="button" className="text-btn" onClick={() => setSelectedId(null)}>
-                Close
-              </button>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {isEmergencyIncident(selected) && (
-                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">Emergency</span>
-              )}
-              {selected.is_super_report && (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800">
-                  Super-report · {selected.evidence_count} evidence
-                </span>
-              )}
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold capitalize text-slate-700">
-                {slugLabel(selected.incident_type)}
-              </span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold capitalize text-slate-700">
-                {selected.status}
-              </span>
-            </div>
-            <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
-              <div>
-                <dt className="text-xs text-slate-500">Seriousness</dt>
-                <dd className="font-semibold">{formatSeverity(selected.highest_seriousness)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">AI confidence</dt>
-                <dd className="font-semibold">{formatConfidence(selected.average_ai_confidence)}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-slate-500">Last reported</dt>
-                <dd className="font-semibold">{formatTimestamp(selected.last_reported_at ?? selected.updated_at, 'date')}</dd>
-              </div>
-            </dl>
-            {selected.location_address && (
-              <p className="mt-2 text-sm text-slate-600">{selected.location_address}</p>
-            )}
-            {selected.tags.length > 0 && (
-              <p className="mt-2 text-xs capitalize text-slate-500">{selected.tags.map(slugLabel).join(' · ')}</p>
-            )}
-          </article>
-        </aside>
-      )}
+        {selected && (
+          <IncidentSheet
+            incident={selected}
+            onClose={() => setSelectedId(null)}
+            onCount={updateConfirmationCount}
+          />
+        )}
+      </div>
     </div>
   );
 }
 
-function EmptyCard({ title, body }: { title: string; body: string }) {
+function IncidentSheet({
+  incident,
+  onClose,
+  onCount,
+}: {
+  incident: MapIncident;
+  onClose: () => void;
+  onCount: (incidentId: string, count: number) => void;
+}) {
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const title = incidentSheetTitle(incident);
+  const description = incidentSheetDescription(incident);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchConfirmation(incident.id, controller.signal)
+      .then((state) => {
+        setConfirmed(state.viewer_confirmed);
+        onCount(incident.id, state.confirmation_count);
+        setConfirmError(null);
+      })
+      .catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') return;
+        setConfirmError(null);
+      });
+    return () => controller.abort();
+  }, [incident.id, onCount]);
+
+  const toggle = async () => {
+    setBusy(true);
+    setConfirmError(null);
+    try {
+      const state = await setConfirmation(incident.id, !confirmed);
+      setConfirmed(state.viewer_confirmed);
+      onCount(incident.id, state.confirmation_count);
+    } catch (cause) {
+      setConfirmError(cause instanceof Error ? cause.message : 'Could not update confirmation.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="pointer-events-none absolute inset-0 z-[1050] grid place-items-center p-4 pt-52">
+    <aside className="map-sheet">
+      <article className="map-sheet-card" role="dialog" aria-labelledby="map-sheet-title">
+        <div className="flex items-start justify-between gap-3">
+          <h2 id="map-sheet-title" className="map-sheet-title">{title}</h2>
+          <button type="button" className="text-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        {description ? <p className="map-sheet-desc">{description}</p> : null}
+        <div className="map-sheet-badges">
+          {isEmergencyIncident(incident) && (
+            <span className="map-badge map-badge-emergency">Emergency</span>
+          )}
+          {incident.is_super_report && (
+            <span className="map-badge map-badge-super">{superReportBadge(incident.evidence_count)}</span>
+          )}
+          <span className="map-badge">{incident.status}</span>
+        </div>
+        <dl className="map-sheet-meta">
+          <div>
+            <dt>Seriousness</dt>
+            <dd>{formatSeverity(incident.highest_seriousness)}</dd>
+          </div>
+          <div>
+            <dt>Last reported</dt>
+            <dd>{formatTimestamp(incident.last_reported_at ?? incident.updated_at, 'date')}</dd>
+          </div>
+          {incident.location_address ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <dt>Location</dt>
+              <dd>{incident.location_address}</dd>
+            </div>
+          ) : null}
+        </dl>
+        <div className="map-confirm">
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            disabled={busy}
+            onClick={() => void toggle()}
+          >
+            {confirmed ? MAP_COPY.confirmed : MAP_COPY.seeThisToo}
+          </button>
+          {confirmed ? (
+            <button
+              type="button"
+              className="text-btn"
+              style={{ display: 'block', margin: '8px auto 0' }}
+              disabled={busy}
+              onClick={() => void toggle()}
+            >
+              {MAP_COPY.removeConfirmation}
+            </button>
+          ) : null}
+          <p className="map-confirm-total">{confirmationTotalLabel(incident.confirmation_count)}</p>
+          <p className="map-confirm-hint">{MAP_COPY.confirmationHint}</p>
+          {confirmError ? (
+            <p className="toast-error toast-error-inline" role="alert">{confirmError}</p>
+          ) : null}
+        </div>
+      </article>
+    </aside>
+  );
+}
+
+function EmptyCard({
+  title,
+  body,
+  action,
+}: {
+  title: string;
+  body: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[10] grid place-items-center p-4">
       <div className="pointer-events-auto max-w-md rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-xl">
         <h2 className="text-lg font-bold text-slate-900">{title}</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">{body}</p>
-        <Link href="/" className="btn btn-primary mt-4 inline-block">
-          Submit a report
-        </Link>
+        {action ?? (
+          <Link href="/" className="btn btn-primary mt-4 inline-block">
+            Submit a report
+          </Link>
+        )}
       </div>
     </div>
   );

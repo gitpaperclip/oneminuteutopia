@@ -58,6 +58,7 @@ export interface Incident {
   severity: string;
   credibility_score: number;
   evidence_count: number;
+  confirmation_count: number;
   highest_seriousness: number | null;
   average_ai_confidence: number | null;
   ai_evidence_count: number;
@@ -114,7 +115,8 @@ export class DatabaseService {
       FROM public.reports r FULL JOIN public.image_analyses a ON a.report_id = r.id LIMIT 1`;
     await sql`SELECT id FROM public.sessions LIMIT 1`;
     await sql`SELECT key FROM public.request_limits LIMIT 1`;
-    await sql`SELECT incident_type, evidence_count, tags, mock_status, mock_reference_id FROM public.incidents LIMIT 1`;
+    await sql`SELECT incident_type, evidence_count, confirmation_count, tags, mock_status, mock_reference_id FROM public.incidents LIMIT 1`;
+    await sql`SELECT incident_id FROM public.incident_confirmations LIMIT 1`;
   }
 
   static async createSession(): Promise<string> {
@@ -132,7 +134,7 @@ export class DatabaseService {
     return rows.length === 1;
   }
 
-  static async checkRateLimit(sessionId: string, action: 'upload' | 'submit', limit: number): Promise<boolean> {
+  static async checkRateLimit(sessionId: string, action: 'upload' | 'submit' | 'confirm', limit: number): Promise<boolean> {
     const sql = this.getConnection();
     const key = `${action}:${sessionId}`;
     const now = Date.now();
@@ -277,7 +279,7 @@ export class DatabaseService {
     const maxLat = filters.maxLat ?? null;
     const minLon = filters.minLon ?? null;
     const maxLon = filters.maxLon ?? null;
-    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 100);
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 101);
     return await sql<Incident[]>`SELECT * FROM public.incidents
       WHERE (${category}::text IS NULL OR category = ${category})
         AND (${incidentType}::text IS NULL OR incident_type = ${incidentType})
@@ -308,5 +310,90 @@ export class DatabaseService {
     const sql = this.getConnection();
     const reports = await sql<Report[]>`SELECT * FROM public.reports WHERE incident_id = ${incidentId} AND withdrawn = 0 ORDER BY created_at ASC`;
     return reports;
+  }
+
+  static async getIncidentConfirmation(
+    incidentId: string,
+    sessionId: string | null,
+  ): Promise<{ confirmation_count: number; viewer_confirmed: boolean } | undefined> {
+    const sql = this.getConnection();
+    const [incident] = await sql<Pick<Incident, 'id' | 'confirmation_count'>[]>`
+      SELECT id, confirmation_count FROM public.incidents WHERE id = ${incidentId}`;
+    if (!incident) return undefined;
+    if (!sessionId) {
+      return { confirmation_count: incident.confirmation_count, viewer_confirmed: false };
+    }
+    const rows = await sql`
+      SELECT 1 FROM public.incident_confirmations
+      WHERE incident_id = ${incidentId} AND session_id = ${sessionId} LIMIT 1`;
+    return { confirmation_count: incident.confirmation_count, viewer_confirmed: rows.length === 1 };
+  }
+
+  static async confirmIncident(
+    incidentId: string,
+    sessionId: string,
+  ): Promise<{ confirmation_count: number; viewer_confirmed: boolean; evidence_count: number }> {
+    const sql = this.getConnection();
+    return await sql.begin(async tx => {
+      await tx`SET LOCAL statement_timeout = '10s'`;
+      const [incident] = await tx<Incident[]>`SELECT * FROM public.incidents WHERE id = ${incidentId} FOR UPDATE`;
+      if (!incident) throw new HttpError(404, 'Incident not found');
+      const now = Date.now();
+      const inserted = await tx`
+        INSERT INTO public.incident_confirmations (incident_id, session_id, created_at)
+        VALUES (${incidentId}, ${sessionId}, ${now})
+        ON CONFLICT (incident_id, session_id) DO NOTHING
+        RETURNING incident_id`;
+      if (inserted.length === 0) {
+        return {
+          confirmation_count: incident.confirmation_count,
+          viewer_confirmed: true,
+          evidence_count: incident.evidence_count,
+        };
+      }
+      const [updated] = await tx<Incident[]>`
+        UPDATE public.incidents
+        SET confirmation_count = confirmation_count + 1
+        WHERE id = ${incidentId}
+        RETURNING *`;
+      return {
+        confirmation_count: updated.confirmation_count,
+        viewer_confirmed: true,
+        evidence_count: updated.evidence_count,
+      };
+    });
+  }
+
+  static async unconfirmIncident(
+    incidentId: string,
+    sessionId: string,
+  ): Promise<{ confirmation_count: number; viewer_confirmed: boolean; evidence_count: number }> {
+    const sql = this.getConnection();
+    return await sql.begin(async tx => {
+      await tx`SET LOCAL statement_timeout = '10s'`;
+      const [incident] = await tx<Incident[]>`SELECT * FROM public.incidents WHERE id = ${incidentId} FOR UPDATE`;
+      if (!incident) throw new HttpError(404, 'Incident not found');
+      const deleted = await tx`
+        DELETE FROM public.incident_confirmations
+        WHERE incident_id = ${incidentId} AND session_id = ${sessionId}
+        RETURNING incident_id`;
+      if (deleted.length === 0) {
+        return {
+          confirmation_count: incident.confirmation_count,
+          viewer_confirmed: false,
+          evidence_count: incident.evidence_count,
+        };
+      }
+      const [updated] = await tx<Incident[]>`
+        UPDATE public.incidents
+        SET confirmation_count = GREATEST(confirmation_count - 1, 0)
+        WHERE id = ${incidentId}
+        RETURNING *`;
+      return {
+        confirmation_count: updated.confirmation_count,
+        viewer_confirmed: false,
+        evidence_count: updated.evidence_count,
+      };
+    });
   }
 }
