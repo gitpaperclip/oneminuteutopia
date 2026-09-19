@@ -2,7 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DatabaseService, type Incident } from '@/lib/db';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
-import { handoffsForCategory } from '@/lib/baltimore-routes';
+import {
+  handoffsForCategory,
+  isEmergencyHandoff,
+  telHref,
+  type HandoffLink,
+} from '@/lib/baltimore-routes';
 
 /* eslint-disable @next/next/no-img-element -- public mark + stored media URLs */
 
@@ -54,6 +59,39 @@ function mockPortalCopy(incident: Incident | undefined) {
   };
 }
 
+function HandoffItem({ link }: { link: HandoffLink }) {
+  const isTel = link.href.startsWith('tel:');
+  const title = link.department || link.label;
+  return (
+    <li>
+      <article className="handoff-card">
+        <h3 className="handoff-title">{title}</h3>
+        {link.note ? <p className="handoff-note">{link.note}</p> : null}
+        {link.phones?.length ? (
+          <p className="handoff-phones">
+            {link.phones.map((phone) => (
+              <a key={`${link.id}-${phone.number}`} href={telHref(phone.number)}>
+                {phone.number}
+                {phone.label ? <span> {phone.label}</span> : null}
+              </a>
+            ))}
+          </p>
+        ) : null}
+        {isTel ? null : (
+          <a
+            className="handoff-portal"
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open portal
+          </a>
+        )}
+      </article>
+    </li>
+  );
+}
+
 export default async function ReceiptPage({
   params,
   searchParams,
@@ -71,7 +109,9 @@ export default async function ReceiptPage({
     : undefined;
   const category = cat || report.category;
   const links = handoffsForCategory(category);
+  const emergency = isEmergencyHandoff(category, report.seriousness);
   const label = CATEGORY_LABELS[category] || category.replaceAll('_', ' ');
+  const followUp = links.filter((link) => link.id !== '911');
   const evidenceCount = incident?.evidence_count ?? 1;
   const mock = mockPortalCopy(incident);
 
@@ -85,6 +125,17 @@ export default async function ReceiptPage({
       <p className="receipt-id" aria-label="Report id">{report.id}</p>
       <p className="receipt-cat">{label}</p>
 
+      {emergency ? (
+        <section className="receipt-911" aria-label="Emergency">
+          <a className="btn btn-emergency btn-block" href="tel:911">
+            Contact 911
+          </a>
+          <p className="receipt-note">
+            Call now if anyone is in danger. This app does not contact 911 or submit this to the city for you.
+          </p>
+        </section>
+      ) : null}
+
       <section className="receipt-status" aria-label="Incident status">
         <h2>This incident</h2>
         <p>{clusterCopy(evidenceCount)}</p>
@@ -97,18 +148,11 @@ export default async function ReceiptPage({
       </section>
 
       <section className="receipt-section" aria-label="Suggested next steps">
-        <h2>Suggested next steps</h2>
-        <p className="receipt-note">
-          Confirm yourself on the real city sites — a mock filing is not a Baltimore 311 case.
-        </p>
+        <h2>{emergency ? 'After you are safe' : 'Report this yourself'}</h2>
+        <p className="receipt-note">Confirm the destination and send it yourself — we do not send this for you.</p>
         <ul className="handoff-list">
-          {links.map((link) => (
-            <li key={link.id}>
-              <a href={link.href} target="_blank" rel="noopener noreferrer">
-                {link.label}
-                {link.note ? <span className="handoff-note">{link.note}</span> : null}
-              </a>
-            </li>
+          {(emergency ? followUp : links).map((link) => (
+            <HandoffItem key={link.id} link={link} />
           ))}
         </ul>
       </section>
