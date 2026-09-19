@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { routeIncident } from './agency-route.ts';
+import { assertMockPortalUrls } from './mock-portal-url.ts';
 import {
   createWorkerClient,
   fetchIncident,
@@ -87,6 +88,7 @@ async function processExistingIncidents(client: ReturnType<typeof createWorkerCl
 }
 
 async function main() {
+  assertMockPortalUrls();
   console.log('Mock government worker started.\n');
   console.log('Connecting to Supabase...\n');
   const client = createWorkerClient();

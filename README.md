@@ -155,8 +155,12 @@ every 10 seconds. A visible browser opens only for non-emergency incidents whose
 incident score is at least 0.75 and that have not already been filed. Road and
 streetlight clusters open the transportation mock; litter and other civic issues
 open the general 311 mock. Apply `202609190007_reports_realtime.sql` so Supabase
-Realtime publishes `reports`. Set `MOCK_GOVERNMENT_URL` or
-`MOCK_TRANSPORTATION_URL` if a demo form is hosted at a different address.
+Realtime publishes `reports`. `MOCK_GOVERNMENT_URL` and
+`MOCK_TRANSPORTATION_URL` must use an allowlisted hostname (`localhost`,
+`127.0.0.1`, `mock-government-page-without-api.vercel.app`, or
+`mock-second-gov-site-transportation.vercel.app`). The worker refuses to start
+or submit if a mock portal URL is missing or not allowlisted. Live city URLs
+are not permitted.
 
 ## Verification
 

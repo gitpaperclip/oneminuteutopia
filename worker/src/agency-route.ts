@@ -1,3 +1,4 @@
+import { resolveMockPortalUrl } from './mock-portal-url.ts';
 import type { WorkerIncident } from './types.ts';
 
 export type MockAgency = 'transportation' | 'general';
@@ -39,9 +40,10 @@ export function mockAgencyRoute(agency: MockAgency): MockAgencyRoute {
     return {
       agency,
       label: 'Riverton Department of Transportation',
-      url:
-        process.env.MOCK_TRANSPORTATION_URL?.trim() ||
+      url: resolveMockPortalUrl(
+        'MOCK_TRANSPORTATION_URL',
         'https://mock-second-gov-site-transportation.vercel.app/',
+      ),
       openButtonName: 'Report a Roadway Hazard',
     };
   }
@@ -49,9 +51,10 @@ export function mockAgencyRoute(agency: MockAgency): MockAgencyRoute {
   return {
     agency: 'general',
     label: 'City 311',
-    url:
-      process.env.MOCK_GOVERNMENT_URL?.trim() ||
+    url: resolveMockPortalUrl(
+      'MOCK_GOVERNMENT_URL',
       'https://mock-government-page-without-api.vercel.app/',
+    ),
     openButtonName: 'Report an Issue',
   };
 }

@@ -1,5 +1,6 @@
 import { chromium, type Page } from 'playwright';
 import type { MockAgencyRoute } from './agency-route.ts';
+import { assertAllowedMockPortalUrl } from './mock-portal-url.ts';
 import type { MockGovernmentPayload } from './types.ts';
 
 async function confirmationId(page: Page): Promise<string | null> {
@@ -24,6 +25,7 @@ export async function submitToMockGovernment(
 ): Promise<string> {
   const headless = process.env.MOCK_GOVERNMENT_HEADLESS === 'true';
   const clickSubmit = process.env.MOCK_GOVERNMENT_CLICK_SUBMIT !== 'false';
+  assertAllowedMockPortalUrl(route.url, `${route.agency} mock portal`);
   const browser = await chromium.launch({
     headless,
     slowMo: headless ? 0 : 250,
