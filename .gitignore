@@ -44,3 +44,7 @@ next-env.d.ts
 # application data
 /data
 /public/uploads
+
+# local implementation and validation scratch
+/work/
+/baseline.zip

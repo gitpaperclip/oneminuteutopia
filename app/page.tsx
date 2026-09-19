@@ -1,777 +1,365 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element -- previews use local object URLs, which next/image cannot optimize */
+/* eslint-disable @next/next/no-img-element -- local photo previews use object URLs */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { nanoid } from 'nanoid';
-
-interface AnalysisResult {
-  category: string;
-  short_label: string;
-  full_description: string;
-  confidence: number;
-  possible_hazard: boolean;
-  community_action_candidate: boolean;
-  routing_suggestion: string;
-  model: string;
-}
+import Link from 'next/link';
+import { CATEGORY_LABELS } from '@/lib/analysis-labels';
+import { prepareReportImage } from '@/lib/image-client';
 
 interface UploadResult {
-  image_path: string;
-  image_hash: string;
-  analysis: AnalysisResult | null;
+  analysis_id: string;
+  analysis_status: 'complete' | 'unavailable';
+  warning?: string;
+  analysis: { category: string; seriousness: number | null; ai_confidence: number };
 }
 
-interface Location {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-  address?: string;
+interface ReportLocation { latitude: number; longitude: number; accuracy: number }
+type IconName = 'camera' | 'upload' | 'pin' | 'check' | 'arrow' | 'spark';
+
+function Icon({ name, className = '' }: { name: IconName; className?: string }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    camera: <><path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z" /><circle cx="12" cy="13" r="4" /></>,
+    upload: <><path d="M12 16V3m-5 5 5-5 5 5M4 15v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5" /></>,
+    pin: <><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
+    check: <path d="m5 12 4 4L19 6" />,
+    arrow: <path d="M4 12h16m-6-6 6 6-6 6" />,
+    spark: <path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z" />,
+  };
+  return <svg className={className} width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 
-const MAX_SOURCE_IMAGE_BYTES = 25 * 1024 * 1024;
-const MAX_BROWSER_UPLOAD_BYTES = 3.5 * 1024 * 1024;
-const MAX_IMAGE_DIMENSION = 2048;
-
-function stopMediaStream(stream: MediaStream | null) {
+function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
 }
 
-function waitForVideoMetadata(video: HTMLVideoElement, timeoutMs = 10000) {
-  if (video.readyState >= HTMLMediaElement.HAVE_METADATA && video.videoWidth > 0) {
-    return Promise.resolve();
-  }
-
+function waitForCamera(video: HTMLVideoElement) {
+  if (video.readyState >= 2 && video.videoWidth > 0) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {
     const cleanup = () => {
-      clearTimeout(timeoutId);
-      video.removeEventListener('loadedmetadata', handleReady);
-      video.removeEventListener('canplay', handleReady);
-      video.removeEventListener('error', handleError);
+      clearTimeout(timeout);
+      video.removeEventListener('loadeddata', ready);
+      video.removeEventListener('error', failed);
     };
-    const handleReady = () => {
-      if (video.videoWidth === 0 || video.videoHeight === 0) return;
-      cleanup();
-      resolve();
-    };
-    const handleError = () => {
-      cleanup();
-      reject(new Error('The browser could not play the camera stream.'));
-    };
-    const timeoutId = window.setTimeout(() => {
-      cleanup();
-      reject(new Error('Camera preview timed out.'));
-    }, timeoutMs);
-
-    video.addEventListener('loadedmetadata', handleReady);
-    video.addEventListener('canplay', handleReady);
-    video.addEventListener('error', handleError);
+    const ready = () => { if (video.videoWidth > 0) { cleanup(); resolve(); } };
+    const failed = () => { cleanup(); reject(new Error('Camera preview unavailable.')); };
+    const timeout = window.setTimeout(failed, 10000);
+    video.addEventListener('loadeddata', ready);
+    video.addEventListener('error', failed);
   });
-}
-
-function getCameraErrorMessage(error: unknown) {
-  if (error instanceof DOMException) {
-    if (error.name === 'NotAllowedError' || error.name === 'SecurityError') {
-      return 'Camera permission was blocked. Allow camera access in your browser settings, or upload a photo.';
-    }
-    if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-      return 'No camera was found on this device. You can upload a photo instead.';
-    }
-    if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
-      return 'The camera is being used by another app. Close it there and try again, or upload a photo.';
-    }
-    if (error.name === 'OverconstrainedError' || error.name === 'ConstraintNotSatisfiedError') {
-      return 'This camera does not support the requested settings. Try again or upload a photo.';
-    }
-  }
-
-  return 'Unable to start the camera. Check browser permissions, then try again or upload a photo.';
-}
-
-function loadImage(file: File) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = new Image();
-
-    image.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('This image format cannot be previewed by your browser.'));
-    };
-    image.src = objectUrl;
-  });
-}
-
-async function normalizeImageForUpload(file: File) {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Choose an image file such as JPEG, PNG, WebP, HEIC, or HEIF.');
-  }
-  if (file.size === 0) {
-    throw new Error('The selected image is empty. Choose another photo.');
-  }
-  if (file.size > MAX_SOURCE_IMAGE_BYTES) {
-    throw new Error('The selected image is too large. Choose a photo smaller than 25 MB.');
-  }
-
-  // Camera captures are already sized for upload and do not need another lossy pass.
-  if (file.type === 'image/jpeg' && file.size <= MAX_BROWSER_UPLOAD_BYTES) {
-    return file;
-  }
-
-  try {
-    const image = await loadImage(file);
-    const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
-    const scale = Math.min(1, MAX_IMAGE_DIMENSION / longestSide);
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    const context = canvas.getContext('2d');
-
-    if (!context) {
-      throw new Error('Image conversion is unavailable in this browser.');
-    }
-
-    context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-    let quality = 0.86;
-    let blob: Blob | null = null;
-    do {
-      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
-      quality -= 0.12;
-    } while (blob && blob.size > MAX_BROWSER_UPLOAD_BYTES && quality >= 0.5);
-
-    if (!blob || blob.size > MAX_BROWSER_UPLOAD_BYTES) {
-      throw new Error('The image could not be reduced to a safe upload size.');
-    }
-
-    const baseName = file.name.replace(/\.[^.]+$/, '') || 'photo';
-    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
-  } catch (error) {
-    // Gemini accepts HEIC/HEIF. Preserve a small original if the browser cannot
-    // decode it locally; the review screen will show a filename fallback.
-    if (file.size <= MAX_BROWSER_UPLOAD_BYTES) {
-      return file;
-    }
-    throw error;
-  }
 }
 
 export default function ReportPage() {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const cameraStreamRef = useRef<MediaStream | null>(null);
-  const cameraRequestIdRef = useRef(0);
-  
-  const [step, setStep] = useState<'capture' | 'review' | 'submitting'>('capture');
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
-  const [location, setLocation] = useState<Location | null>(null);
-  const [manualAddress, setManualAddress] = useState('');
-  const [userDescription, setUserDescription] = useState('');
-  const [category, setCategory] = useState('');
-  const [shortLabel, setShortLabel] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequest = useRef(0);
+  const uploadRequest = useRef(0);
+  const locationRequest = useRef(0);
+  const uploadController = useRef<AbortController | null>(null);
+  const submittingRef = useRef(false);
+  const capturingRef = useRef(false);
+  const [step, setStep] = useState<'capture' | 'review'>('capture');
+  const [preparedPhoto, setPreparedPhoto] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [upload, setUpload] = useState<UploadResult | null>(null);
+  const [progress, setProgress] = useState<'preparing' | 'analyzing' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [locationStatus, setLocationStatus] = useState<'pending' | 'granted' | 'denied' | 'error'>('pending');
-  const [showCamera, setShowCamera] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const [isCameraLoading, setIsCameraLoading] = useState(false);
-  const [previewUnavailable, setPreviewUnavailable] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [location, setLocation] = useState<ReportLocation | null>(null);
+  const [locationMode, setLocationMode] = useState<'manual' | 'gps'>('manual');
+  const [address, setAddress] = useState('');
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!navigator.geolocation) return;
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-        });
-        setLocationStatus('granted');
-      },
-      () => {
-        // Permission denial is expected; the review screen offers manual entry.
-        setLocationStatus('denied');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  }, []);
-
-  const stopCamera = useCallback((clearError = false) => {
-    cameraRequestIdRef.current += 1;
-    stopMediaStream(cameraStreamRef.current);
-    cameraStreamRef.current = null;
+  const closeCamera = useCallback(() => {
+    cameraRequest.current += 1;
+    stopStream(streamRef.current);
+    streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraStream(null);
-    setShowCamera(false);
-    setIsCameraLoading(false);
-    if (clearError) setError(null);
+    setCameraOpen(false);
+    setCameraLoading(false);
   }, []);
 
   useEffect(() => () => {
-    cameraRequestIdRef.current += 1;
-    stopMediaStream(cameraStreamRef.current);
+    cameraRequest.current += 1;
+    uploadRequest.current += 1;
+    locationRequest.current += 1;
+    stopStream(streamRef.current);
+    uploadController.current?.abort();
   }, []);
 
-  useEffect(() => {
-    // The video stays mounted while loading so the stream always has a target.
-    const attachStream = async () => {
-      if (!showCamera || !cameraStream || !videoRef.current) return;
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
 
-      const video = videoRef.current;
+  useEffect(() => {
+    if (!cameraOpen || !cameraStream || !videoRef.current) return;
+    let active = true;
+    const video = videoRef.current;
+    video.srcObject = cameraStream;
+    (async () => {
       try {
-        if (video.srcObject !== cameraStream) video.srcObject = cameraStream;
-        await waitForVideoMetadata(video);
+        await waitForCamera(video);
         await video.play();
-        setIsCameraLoading(false);
-      } catch (err) {
-        console.error('Video attach error:', err);
-        stopCamera();
-        setError('Unable to display camera stream. Please use the upload option below.');
+        if (active) setCameraLoading(false);
+      } catch {
+        if (active) {
+          closeCamera();
+          setError('The camera preview could not start. You can upload a photo instead.');
+        }
       }
-    };
-
-    attachStream();
-  }, [showCamera, cameraStream, stopCamera]);
-
-  useEffect(() => {
-    // Cleanup image preview URLs to prevent memory leaks
-    return () => {
-      if (imagePreview) {
-        URL.revokeObjectURL(imagePreview);
-      }
-    };
-  }, [imagePreview]);
+    })();
+    return () => { active = false; };
+  }, [cameraOpen, cameraStream, closeCamera]);
 
   const startCamera = async () => {
-    if (!window.isSecureContext) {
-      setError('Camera access requires HTTPS. Open the secure deployed site, or upload a photo instead.');
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setError('Camera access needs a supported browser on HTTPS. Use Upload photo instead.');
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setError('This browser does not provide camera access. You can upload a photo instead.');
-      return;
-    }
-
-    stopCamera();
-    const requestId = ++cameraRequestIdRef.current;
-    setIsCameraLoading(true);
-    setShowCamera(true);
+    closeCamera();
+    const request = ++cameraRequest.current;
     setError(null);
-
+    setCameraOpen(true);
+    setCameraLoading(true);
     try {
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        });
-      } catch (error) {
-        if (!(error instanceof DOMException) ||
-            (error.name !== 'OverconstrainedError' && error.name !== 'ConstraintNotSatisfiedError')) {
-          throw error;
-        }
-        // Some desktop and older mobile browsers reject rear-camera constraints.
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1600 }, height: { ideal: 1200 } }, audio: false });
+      } catch (cause) {
+        if (!(cause instanceof DOMException) || cause.name !== 'OverconstrainedError') throw cause;
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       }
-
-      if (cameraRequestIdRef.current !== requestId) {
-        stopMediaStream(stream);
-        return;
-      }
-
-      cameraStreamRef.current = stream;
+      if (request !== cameraRequest.current) { stopStream(stream); return; }
+      streamRef.current = stream;
       setCameraStream(stream);
-    } catch (err) {
-      console.error('Camera error:', err);
-      if (cameraRequestIdRef.current !== requestId) return;
-      stopCamera();
-      setError(getCameraErrorMessage(err));
+    } catch (cause) {
+      if (request !== cameraRequest.current) return;
+      closeCamera();
+      setError(cause instanceof DOMException && cause.name === 'NotAllowedError'
+        ? 'Camera permission was blocked. Allow it in your browser settings or upload a photo.'
+        : 'The camera is unavailable or in use. Try again or upload a photo.');
+    }
+  };
+
+  const processPhoto = async (source: File, alreadyPrepared = false) => {
+    const request = ++uploadRequest.current;
+    uploadController.current?.abort();
+    closeCamera();
+    setUpload(null);
+    setError(null);
+    setProgress(alreadyPrepared ? 'analyzing' : 'preparing');
+    if (!alreadyPrepared) { setPreparedPhoto(null); setPreview(null); }
+    let timeout: number | undefined;
+    try {
+      const file = alreadyPrepared ? source : await prepareReportImage(source);
+      if (request !== uploadRequest.current) return;
+      setPreparedPhoto(file);
+      if (!alreadyPrepared) setPreview(URL.createObjectURL(file));
+      setProgress('analyzing');
+      const controller = new AbortController();
+      uploadController.current = controller;
+      timeout = window.setTimeout(() => controller.abort(), 60000);
+      const form = new FormData();
+      form.append('image', file);
+      const response = await fetch('/api/upload', { method: 'POST', body: form, signal: controller.signal });
+      const data = await response.json().catch(() => { throw new Error('The server could not process this photo. Please try again.'); });
+      if (!response.ok) throw new Error(data.error || 'The photo could not be uploaded. Please try again.');
+      if (!data.analysis_id || !data.analysis || !(data.analysis.category in CATEGORY_LABELS)) throw new Error('The saved assessment was incomplete. Please try again.');
+      if (request !== uploadRequest.current) return;
+      setUpload(data);
+      setCategory(data.analysis.category);
+      setStep('review');
+    } catch (cause) {
+      if (request !== uploadRequest.current) return;
+      setError(cause instanceof DOMException && cause.name === 'AbortError'
+        ? 'Processing took too long. Your photo is ready to try again.'
+        : cause instanceof Error ? cause.message : 'Unable to process this photo. Please try again.');
+    } finally {
+      clearTimeout(timeout);
+      if (request === uploadRequest.current) { setProgress(null); uploadController.current = null; }
     }
   };
 
   const capturePhoto = async () => {
-    if (!videoRef.current || !cameraStream) {
-      setError('Camera not ready. Please try again or use upload.');
-      return;
-    }
-
     const video = videoRef.current;
-    
-    // Ensure video has valid dimensions
-    if (video.videoWidth === 0 || video.videoHeight === 0) {
-      setError('Video stream not ready. Please wait a moment and try again.');
-      return;
-    }
-
+    if (!video || !video.videoWidth || capturingRef.current) return;
+    const request = cameraRequest.current;
+    capturingRef.current = true;
+    setCapturing(true);
     try {
       const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) {
-        throw new Error('Canvas context not available');
-      }
-      
-      // Draw current video frame to canvas
-      ctx.drawImage(video, 0, 0);
-      
-      // Convert to blob (JPEG for iOS compatibility)
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, 'image/jpeg', 0.9);
-      });
-      
-      if (!blob) {
-        throw new Error('Failed to capture image');
-      }
-      
-      const file = new File([blob], 'camera-photo.jpg', { type: 'image/jpeg' });
-      
-      stopCamera();
-      // Process the captured image
-      await handleImageSelected(file);
-    } catch (err) {
-      console.error('Capture error:', err);
-      setError('Failed to capture photo. Please try again or use upload.');
-    }
+      const scale = Math.min(1, 1600 / Math.max(video.videoWidth, video.videoHeight));
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Unable to capture a photo. Please use Upload photo.');
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      if (!blob || blob.size > 3 * 1024 * 1024) throw new Error('Unable to prepare this photo. Please use Upload photo.');
+      if (request !== cameraRequest.current) return;
+      const file = new File([blob], 'report-photo.jpg', { type: 'image/jpeg' });
+      setPreview(URL.createObjectURL(file));
+      await processPhoto(file, true);
+    } catch (cause) {
+      if (request === cameraRequest.current) setError(cause instanceof Error ? cause.message : 'Photo capture failed. Please try again.');
+    } finally { capturingRef.current = false; setCapturing(false); }
   };
 
-  const handleFileSelect = () => {
-    if (!fileInputRef.current) return;
-    fileInputRef.current.value = '';
-    fileInputRef.current.click();
+  const choosePhoto = () => { if (fileInput.current) { fileInput.current.value = ''; fileInput.current.click(); } };
+
+  const requestCurrentLocation = () => {
+    const request = ++locationRequest.current;
+    setLocationMessage(null);
+    if (!navigator.geolocation) { setLocationMessage('Location is unavailable. Enter an address or landmark below.'); return; }
+    setLocationLoading(true);
+    navigator.geolocation.getCurrentPosition((position) => {
+      if (request !== locationRequest.current) return;
+      setLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy });
+      setLocationMode('gps');
+      setLocationLoading(false);
+    }, () => {
+      if (request !== locationRequest.current) return;
+      setLocationLoading(false);
+      setLocationMessage('We could not get your location. Enter the issue’s address or a nearby landmark.');
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.currentTarget.value = '';
-    if (file) handleImageSelected(file);
+  const switchToManualLocation = () => {
+    locationRequest.current += 1;
+    setLocationMode('manual');
+    setLocationLoading(false);
+    setLocationMessage(null);
   };
 
-  const handleImageSelected = async (sourceFile: File, reusePreview = false) => {
+  const replacePhoto = () => {
+    uploadRequest.current += 1;
+    locationRequest.current += 1;
+    uploadController.current?.abort();
+    setLocationLoading(false);
+    setLocationMessage(null);
+    setUpload(null);
+    setPreparedPhoto(null);
+    setPreview(null);
     setError(null);
-    setIsUploading(true);
-
-    try {
-      const file = await normalizeImageForUpload(sourceFile);
-
-      if (!reusePreview) {
-        if (imagePreview) URL.revokeObjectURL(imagePreview);
-        setImageFile(file);
-        setImagePreview(URL.createObjectURL(file));
-        setPreviewUnavailable(false);
-      }
-
-      const formData = new FormData();
-      formData.append('image', file);
-
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      let data;
-      try {
-        data = await response.json();
-      } catch {
-        throw new Error('The server could not process your request. Please try again.');
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Upload failed');
-      }
-
-      setUploadResult(data);
-      
-      // Set initial values from AI analysis or defaults
-      if (data.analysis) {
-        setCategory(data.analysis.category);
-        setShortLabel(data.analysis.short_label);
-      } else {
-        setCategory('other');
-        setShortLabel('Issue requiring review');
-      }
-
-      setStep('review');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to process image');
-    } finally {
-      setIsUploading(false);
-    }
+    setStep('capture');
+    setDescription('');
   };
 
-  const handleSubmit = async () => {
-    if (!uploadResult) return;
+  const hasLocation = locationMode === 'gps' ? location !== null : address.trim().length > 0;
 
-    setIsSubmitting(true);
+  const submitReport = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!upload || !hasLocation || category === 'unable_to_assess' || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     setError(null);
-
+    const gps = locationMode === 'gps' ? location : null;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 45000);
     try {
-      const submissionData = {
-        image_path: uploadResult.image_path,
-        image_hash: uploadResult.image_hash,
-        category,
-        short_label: shortLabel,
-        full_description: uploadResult.analysis?.full_description || null,
-        user_description: userDescription || null,
-        latitude: location?.latitude || null,
-        longitude: location?.longitude || null,
-        location_accuracy: location?.accuracy || null,
-        location_source: locationStatus === 'granted' ? 'gps' : 'manual',
-        location_address: location?.address || manualAddress || null,
-        ai_confidence: uploadResult.analysis?.confidence || null,
-        ai_model: uploadResult.analysis?.model || null,
-        ai_routing: uploadResult.analysis?.routing_suggestion || null,
-        user_corrected: category !== uploadResult.analysis?.category || shortLabel !== uploadResult.analysis?.short_label,
-        idempotency_key: nanoid(),
-      };
-
       const response = await fetch('/api/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submissionData),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify({ analysis_id: upload.analysis_id, category, user_description: description.trim() || null,
+          latitude: gps?.latitude ?? null, longitude: gps?.longitude ?? null, location_accuracy: gps?.accuracy ?? null,
+          location_source: gps ? 'gps' : 'manual', location_address: gps ? null : address.trim() }),
       });
-
-      const data = await response.json().catch(() => {
-        throw new Error('The server could not process your request. Please try again.');
-      });
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Submission failed');
-      }
-
-      // Redirect to receipt page
-      router.push(`/receipt/${data.report_id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit report');
-      setIsSubmitting(false);
-    }
+      const data = await response.json().catch(() => { throw new Error('The server did not confirm your report. Please try submitting again.'); });
+      if (!response.ok) throw new Error(data.error || 'Your report could not be saved. Please try again.');
+      if (typeof data.report_id !== 'string' || !data.report_id) throw new Error('The server did not confirm your report. Please try submitting again.');
+      router.push(`/receipt/${encodeURIComponent(data.report_id)}`);
+    } catch (cause) {
+      setError(cause instanceof DOMException && cause.name === 'AbortError'
+        ? 'Confirmation took too long. Try submitting again; a retry will not create a duplicate report.'
+        : cause instanceof Error ? cause.message : 'Your report could not be saved. Please try again.');
+      submittingRef.current = false;
+      setSubmitting(false);
+    } finally { clearTimeout(timeout); }
   };
 
-  if (step === 'capture') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <header className="bg-white border-b border-gray-200 px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">Report an Issue</h1>
-          <p className="text-sm text-gray-600 mt-1">Help improve your community</p>
-        </header>
+  return (
+    <div className="site-shell">
+      <header className="site-header">
+        <Link href="/" className="brand"><span className="brand-mark" aria-hidden="true">✳</span><span>one minute<span className="brand-light"> utopia</span></span></Link>
+        <span className="header-note">Small reports. Better places.</span>
+      </header>
+      <main id="main-content" className={step === 'capture' ? 'report-main' : 'report-main review-main'}>
+        <div className="intro">
+          <p className="eyebrow"><span className="status-dot" /> A little care goes a long way</p>
+          <h1>{step === 'capture' ? <>A better block.<br />Starts with a photo.</> : <>One last look.<br /><span>Then you’re all set.</span></>}</h1>
+          <p className="intro-copy">{step === 'capture' ? 'Spotted something that needs attention? Snap a photo. We’ll help identify the issue, so you can make a clear report in moments.' : 'Check the image assessment, tell us where the issue is, and add anything the photo doesn’t show.'}</p>
+          <ol className="step-list" aria-label="Report progress">
+            <li className={step === 'capture' ? 'current' : 'complete'} aria-current={step === 'capture' ? 'step' : undefined}><span>{step === 'review' ? <Icon name="check" /> : '1'}</span> Add a photo</li>
+            <li className={step === 'review' ? 'current' : ''} aria-current={step === 'review' ? 'step' : undefined}><span>2</span> Review & locate</li>
+            <li><span>3</span> Send your report</li>
+          </ol>
+          {step === 'capture' && <div className="intro-footnote"><Icon name="spark" /><p>AI helps with the first look.<br />You have the final say.</p></div>}
+        </div>
 
-        <main className="flex-1 px-4 py-6 max-w-2xl mx-auto w-full">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
-              {error}
+        <section className="report-workspace" aria-label={step === 'capture' ? 'Add a report photo' : 'Review your report'}>
+          {error && <div className="notice notice-error" role="alert">{error}</div>}
+          <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/avif,.heic,.heif" className="sr-only" tabIndex={-1} aria-label="Choose a report photo" onChange={(event) => { const file = event.target.files?.[0]; event.currentTarget.value = ''; if (file) void processPhoto(file); }} />
+          {step === 'capture' ? (
+            <div className="capture-card">
+              <div className="card-heading"><span className="eyebrow">Your neighborhood, noticed</span><span className="small-badge">01 / 03</span></div>
+              {cameraOpen ? <>
+                <div className="camera-preview"><video ref={videoRef} autoPlay playsInline muted aria-label="Live camera preview" />{cameraLoading && <div className="camera-overlay"><span className="spinner" />Starting camera…</div>}</div>
+                <div className="button-row"><button className="button button-primary" onClick={capturePhoto} disabled={cameraLoading || !cameraStream || capturing}><Icon name="camera" />{capturing ? 'Capturing…' : 'Capture photo'}</button><button className="button button-secondary" onClick={closeCamera}>Cancel</button></div>
+              </> : progress ? <div className="processing" role="status" aria-live="polite">
+                {preview ? <img src={preview} alt="Your selected issue" className="processing-image" /> : <div className="capture-illustration"><Icon name="upload" /></div>}
+                <div className="processing-title"><span className="spinner" /><h2>{progress === 'preparing' ? 'Getting your photo ready' : 'Taking a closer look'}</h2></div>
+                <p>{progress === 'preparing' ? 'Resizing the image for a quicker upload.' : 'Uploading your photo and asking AI to assess the visible issue.'}</p>
+                <div className="processing-steps"><span className={progress === 'analyzing' ? 'done' : 'active'}>1. Prepare photo</span><span className={progress === 'analyzing' ? 'active' : ''}>2. Analyze image</span><span>3. Review</span></div>
+              </div> : <>
+                {preview && preparedPhoto ? <img src={preview} alt="Your selected issue, ready to retry" className="retry-image" /> : <div className="capture-art" aria-hidden="true"><div className="photo-frame"><span className="frame-sun" /><span className="frame-hill frame-hill-back" /><span className="frame-hill" /><span className="frame-focus"><Icon name="spark" /></span></div><span className="photo-caption">Notice it. Capture it. Report it.</span></div>}
+                <h2>{preparedPhoto ? 'Let’s try that again' : 'What needs a little attention?'}</h2>
+                <p className="card-copy">{preparedPhoto ? 'Your photo is ready. Retry the assessment or choose a different image.' : 'A clear photo helps us understand the issue. Include the surrounding area if you can.'}</p>
+                {preparedPhoto ? <button className="button button-primary" onClick={() => processPhoto(preparedPhoto, true)}><Icon name="spark" />Try processing again</button> : <button className="button button-primary" onClick={startCamera}><Icon name="camera" />Take a photo</button>}
+                <button className="button button-secondary" onClick={choosePhoto}><Icon name="upload" />{preparedPhoto ? 'Choose another photo' : 'Upload a photo'}</button>
+                <p className="file-hint">Photos up to 20 MB · Optimized before upload</p>
+              </>}
+              <div className="privacy-note"><span aria-hidden="true">↳</span> Only take photos from a safe place. Avoid faces and personal information.</div>
             </div>
-          )}
-
-          {locationStatus === 'denied' && (
-            <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-sm text-yellow-800 font-medium mb-2">Location access denied</p>
-              <p className="text-sm text-yellow-700">
-                You can still submit a report. You&apos;ll be able to enter an address manually.
-              </p>
-            </div>
-          )}
-
-          {showCamera ? (
-            <div className="space-y-4">
-              <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  aria-label="Live camera preview"
-                  className="h-full w-full object-cover"
-                />
-                {isCameraLoading && (
-                  <div className="absolute inset-0 bg-black flex items-center justify-center">
-                  <div className="text-center text-white">
-                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-white mb-4"></div>
-                    <p>Starting camera...</p>
+          ) : upload && (
+            <form onSubmit={submitReport} className="review-card">
+              <div className="review-photo">{preview && <img src={preview} alt="Photo of the issue being reported" />}<button type="button" onClick={replacePhoto} disabled={submitting} className="change-photo">Change photo</button></div>
+              <div className="review-content">
+                <section className="analysis-section" aria-labelledby="analysis-heading">
+                  <div className="section-title"><h2 id="analysis-heading"><Icon name="spark" />{upload.analysis_status === 'unavailable' ? 'Your photo is saved' : 'First look, by AI'}</h2><span className="saved-badge"><Icon name="check" />Saved</span></div>
+                  {upload.analysis_status === 'unavailable' ? <p className="notice notice-neutral">{upload.warning || 'AI analysis is temporarily unavailable. Choose the issue type below and continue with your report.'}</p> : <>
+                    <p className="ai-category">{CATEGORY_LABELS[upload.analysis.category]}</p>
+                    <div className="score-grid"><div><span>Seriousness</span><strong>{upload.analysis.seriousness === null ? 'Not assessed' : <>{upload.analysis.seriousness}<small> / 10</small></>}</strong></div><div><span>AI confidence</span><strong>{upload.analysis.ai_confidence}<small>%</small></strong></div></div>
+                    <p className="assessment-note">An initial assessment of this photo. Confidence is an AI estimate, not verified accuracy.</p>
+                  </>}
+                  <details className="assessment-details"><summary>Saved assessment reference</summary><code>{upload.analysis_id}</code></details>
+                </section>
+                <fieldset disabled={submitting} className="report-fields">
+                  <div className="form-field"><label htmlFor="category">Issue type <span>You can change this</span></label><select id="category" value={category} onChange={(event) => setCategory(event.target.value)} required>{Object.entries(CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value} disabled={value === 'unable_to_assess'}>{value === 'unable_to_assess' ? 'Choose an issue type' : label}</option>)}</select>{category === 'unable_to_assess' && <p className="field-hint category-hint">Choose the issue type that best matches your photo.</p>}</div>
+                  <div className="form-field location-field"><label htmlFor={locationMode === 'manual' ? 'address' : undefined}>Where is the issue?</label><p className="field-hint">Use the issue’s location, which may differ from where you are now.</p>
+                    {locationMode === 'gps' && location ? <div className="location-result"><div><Icon name="pin" /><div><strong>Current location added</strong><p>{location.latitude.toFixed(5)}, {location.longitude.toFixed(5)} · ±{Math.round(location.accuracy)} m</p></div></div><button type="button" className="text-button" onClick={switchToManualLocation}>Use an address instead</button><button type="button" className="text-button" onClick={requestCurrentLocation} disabled={locationLoading}>{locationLoading ? 'Updating location…' : 'Refresh location'}</button></div> : <>
+                      <input id="address" value={address} onChange={(event) => { switchToManualLocation(); setAddress(event.target.value); }} maxLength={500} placeholder="Street address, intersection, or landmark" autoComplete="street-address" required />
+                      <button type="button" className="text-button location-button" onClick={requestCurrentLocation} disabled={locationLoading}><Icon name="pin" />{locationLoading ? 'Finding your location…' : 'Use my current location'}</button>
+                    </>}
+                    {locationMessage && <p className="field-hint location-message" role="status">{locationMessage}</p>}
                   </div>
-                  </div>
-                )}
+                  <details className="optional-details"><summary>Add details <span>Optional</span></summary><div className="form-field"><label htmlFor="description" className="sr-only">Additional details</label><textarea id="description" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} maxLength={2000} placeholder="Add details that might not be visible in the photo." /></div></details>
+                  <button type="submit" className="button button-primary" disabled={!hasLocation || category === 'unable_to_assess' || locationLoading || submitting}>{submitting ? <><span className="spinner" />Sending your report…</> : <>Send report<Icon name="arrow" /></>}</button>
+                  {!hasLocation && <p className="submit-hint">Add an address or current location to continue.</p>}
+                </fieldset>
               </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={capturePhoto}
-                  disabled={isCameraLoading || !cameraStream}
-                  className="flex-1 bg-blue-600 text-white py-4 px-6 rounded-lg font-medium hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  Capture Photo
-                </button>
-                <button
-                  onClick={() => stopCamera(true)}
-                  className="px-6 py-4 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {isUploading ? (
-                <div className="text-center py-8">
-                  {imagePreview && !previewUnavailable && (
-                    <img
-                      src={imagePreview}
-                      alt="Selected report preview"
-                      onError={() => setPreviewUnavailable(true)}
-                      className="w-full max-h-80 object-contain rounded-lg bg-black mb-6"
-                    />
-                  )}
-                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-                  <p className="text-gray-600">Processing image...</p>
-                </div>
-              ) : imageFile && imagePreview && error ? (
-                <div className="space-y-4">
-                  {!previewUnavailable ? (
-                    <img
-                      src={imagePreview}
-                      alt="Selected report preview"
-                      onError={() => setPreviewUnavailable(true)}
-                      className="w-full max-h-80 object-contain rounded-lg bg-black"
-                    />
-                  ) : (
-                    <div className="p-4 rounded-lg bg-white border border-gray-200 text-sm text-gray-700">
-                      Selected: {imageFile.name}
-                    </div>
-                  )}
-                  <button
-                    onClick={() => handleImageSelected(imageFile, true)}
-                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg font-medium hover:bg-blue-700 transition"
-                  >
-                    Try Processing Again
-                  </button>
-                  <button
-                    onClick={handleFileSelect}
-                    className="w-full border-2 border-gray-300 text-gray-700 py-4 px-6 rounded-lg font-medium hover:bg-gray-50 transition"
-                  >
-                    Choose Another Photo
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <button
-                    onClick={startCamera}
-                    disabled={isCameraLoading}
-                    className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    {isCameraLoading ? 'Starting Camera...' : 'Take Photo'}
-                  </button>
-
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-gray-300"></div>
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                      <span className="px-2 bg-gray-50 text-gray-500">or</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={handleFileSelect}
-                    disabled={isCameraLoading}
-                    className="w-full border-2 border-gray-300 text-gray-700 py-4 px-6 rounded-lg font-medium hover:bg-gray-50 transition flex items-center justify-center gap-2 disabled:bg-gray-200 disabled:cursor-not-allowed"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    Upload Photo
-                  </button>
-
-                </>
-              )}
-            </div>
+            </form>
           )}
-        </main>
-      </div>
-    );
-  }
-
-  if (step === 'review') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <header className="bg-white border-b border-gray-200 px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">Review Report</h1>
-        </header>
-
-        <main className="flex-1 px-4 py-6 max-w-2xl mx-auto w-full">
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-800">
-              {error}
-            </div>
-          )}
-
-          <div className="bg-white rounded-lg shadow-sm overflow-hidden mb-4">
-            {imagePreview && (
-              !previewUnavailable ? (
-                <img
-                  src={imagePreview}
-                  alt="Report"
-                  onError={() => setPreviewUnavailable(true)}
-                  className="w-full"
-                />
-              ) : (
-                <div className="p-6 text-sm text-gray-700">
-                  Photo uploaded successfully. Preview is unavailable for this image format.
-                </div>
-              )
-            )}
-          </div>
-
-          <div className="bg-white rounded-lg shadow-sm p-4 space-y-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Issue Type
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="litter">Litter / Debris</option>
-                <option value="path_obstruction">Path Obstruction</option>
-                <option value="road_damage">Road Damage</option>
-                <option value="other">Other Issue</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Short Description
-              </label>
-              <input
-                type="text"
-                value={shortLabel}
-                onChange={(e) => setShortLabel(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Brief description of the issue"
-              />
-            </div>
-
-            {uploadResult?.analysis && uploadResult.analysis.confidence < 0.85 && (
-              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-                Please confirm the issue type and description above.
-              </div>
-            )}
-
-            {locationStatus === 'granted' && location ? (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-sm font-medium text-green-800 mb-1">Location captured</p>
-                <p className="text-xs text-green-700">
-                  Lat: {location.latitude.toFixed(6)}, Lon: {location.longitude.toFixed(6)}
-                  {location.accuracy && ` (±${Math.round(location.accuracy)}m)`}
-                </p>
-              </div>
-            ) : (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Approximate Address or Location
-                </label>
-                <input
-                  type="text"
-                  value={manualAddress}
-                  onChange={(e) => setManualAddress(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="e.g., Near 123 Main St"
-                />
-              </div>
-            )}
-
-            <div>
-              <button
-                onClick={() => setDetailsExpanded(!detailsExpanded)}
-                className="flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
-              >
-                <svg
-                  className={`w-4 h-4 transition-transform ${detailsExpanded ? 'rotate-90' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                Add details (optional)
-              </button>
-
-              {detailsExpanded && (
-                <div className="mt-3">
-                  <textarea
-                    value={userDescription}
-                    onChange={(e) => setUserDescription(e.target.value)}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Additional details about this issue..."
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => {
-                setStep('capture');
-                if (imagePreview) URL.revokeObjectURL(imagePreview);
-                setImageFile(null);
-                setImagePreview(null);
-                setPreviewUnavailable(false);
-                setUploadResult(null);
-                setError(null);
-              }}
-              className="px-6 py-3 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 transition"
-              disabled={isSubmitting}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={isSubmitting || !shortLabel}
-              className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  Submitting...
-                </>
-              ) : (
-                'Submit Report'
-              )}
-            </button>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  return null;
+        </section>
+      </main>
+      <footer className="site-footer"><span>One Minute Utopia</span><p>A small step toward a place we all care for.</p></footer>
+    </div>
+  );
 }

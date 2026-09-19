@@ -1,406 +1,165 @@
 # One Minute Utopia
 
-Camera-first civic infrastructure reporting for mobile devices. Built for HopHacks 2026.
+A camera-first civic reporting app built for HopHacks 2026. Take or upload a photo,
+review an initial AI assessment, confirm the location, and save a report with a
+durable receipt. No account is required.
 
-## Overview
+The current build focuses on image reporting and analysis. It does not send
+reports to a city or emergency service, schedule work, or promise that someone
+will act on a report.
 
-One Minute Utopia is a Next.js application that enables community members to quickly report civic infrastructure issues (litter, road damage, obstructions) using their phone camera. Reports are analyzed by Google Gemini AI and organized into an incident management system for community coordinators.
+## Reporting flow
 
-**Key Features:**
-- 📱 Mobile-first camera capture with rear camera prioritization
-- 🤖 AI-powered image analysis and categorization (Google Gemini)
-- 📍 GPS location capture with manual fallback
-- 🔐 Organizer passphrase authentication for coordinator inbox
-- ☁️ Serverless deployment on Vercel with **Supabase** (Postgres + Storage)
+1. Take a photo with the rear camera, or select an existing image.
+2. The browser prepares a smaller image for upload. The server validates and
+   normalizes it again before storage or analysis.
+3. Supabase photo storage and Gemini analysis run concurrently. Gemini returns
+   category, initial seriousness (0–10), and AI confidence (0–100).
+4. Review the saved assessment and correct the category if needed. Confirm GPS
+   location or enter an address or landmark; add optional details.
+5. Submit. The server loads the session-owned assessment and saves the report
+   atomically. The receipt appears only after persistence succeeds.
 
-## Tech Stack
+If Gemini is unavailable, the photo and an explicitly unavailable assessment are
+saved so that manual reporting remains usable. An unavailable assessment is
+never presented as zero risk.
 
-- **Framework**: Next.js 16 (App Router)
-- **Database**: Supabase Postgres (serverless PostgreSQL with Transaction pooler)
-- **File Storage**: Supabase Storage (public bucket for report photos)
-- **AI**: Google Gemini 2.0 Flash
-- **Deployment**: Vercel
-- **Styling**: Tailwind CSS 4
+## Stack
 
-> **Important**: For Supabase on Vercel serverless, you **must** use the **Transaction pooler** connection string (port 6543, NOT 5432). See Database Configuration below.
+- Next.js 16 App Router, React 19, TypeScript, and Tailwind CSS 4.
+- Supabase Postgres for sessions, saved analyses, and reports.
+- Supabase Storage for report photos.
+- Google Gemini for structured image analysis, called only by the server.
 
-## Prerequisites
+## Local setup
 
-- Node.js 20+ 
-- A Vercel account
-- A Supabase account ([supabase.com](https://supabase.com))
-- A Google AI (Gemini) API key ([get one here](https://aistudio.google.com/apikey))
+Use Node.js 22 or newer. The analysis tests use Node's TypeScript stripping.
 
-## Deploying to Vercel with Supabase
-
-### 1. Set Up Supabase Project
-
-#### Create a Supabase Project
-
-1. Go to [supabase.com](https://supabase.com) and sign in
-2. Click **New Project**
-3. Enter project details:
-   - **Name**: `1minuteutopia` (or your preferred name)
-   - **Database Password**: Save this password securely (you'll need it for `DATABASE_URL`)
-   - **Region**: Choose a region close to your users (e.g., `us-west-2`)
-4. Wait for the project to finish setting up (~2 minutes)
-
-#### Create Storage Bucket
-
-1. In your Supabase dashboard, go to **Storage**
-2. Click **New bucket**
-3. Bucket name: `report-photos`
-4. Set **Public bucket**: ✅ Enabled (allows public read access for report receipts)
-5. Click **Create bucket**
-
-> **Note**: The storage bucket `report-photos` must exist before uploading photos. Create it manually in the Supabase dashboard as described above. The app will automatically verify and use this bucket.
-
-#### Get Your Supabase Credentials
-
-You'll need these values for Vercel environment variables:
-
-1. **Project URL**: Go to **Project Settings** → **API**
-   - Copy the **Project URL** (e.g., `https://obvqhywolewuiplftfgd.supabase.co`)
-   - **IMPORTANT**: Verify your project reference ID is correct (e.g., `obvqhywolewuiplftfgd` - note the letter `l`)
-
-2. **API Keys**: In the same **API** section:
-   - Copy **anon/public** key (for `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
-   - Copy **service_role** key (for `SUPABASE_SERVICE_ROLE_KEY`) ⚠️ Keep this secret!
-
-3. **Database Connection String (Transaction Pooler - REQUIRED)**:
-   - Go to **Project Settings** → **Database**
-   - Under **Connection string**, select **Connection pooling** (NOT "Session mode")
-   - Copy the URI (port `6543`, hostname ending in `pooler.supabase.com`)
-   - Format: `postgresql://postgres.PROJECT_REF:[PASSWORD]@aws-0-REGION.pooler.supabase.com:6543/postgres`
-   - **Add** `?sslmode=require` at the end
-
-> **Why Transaction Pooler?** Vercel's serverless functions create many short-lived connections. Supabase's transaction pooler (PgBouncer with `prepare: false`) efficiently manages these connections, preventing "too many connections" errors. The session mode connection (port 5432) is NOT compatible with serverless environments and will cause connection failures.
-
-### 2. Deploy to Vercel
-
-#### Option A: Deploy via Vercel Dashboard (Recommended)
-
-1. Go to [vercel.com](https://vercel.com) and sign in
-2. Click **Add New Project**
-3. Import your GitHub repository (`oneminuteutopia`)
-4. Vercel will auto-detect Next.js settings
-5. Click **Deploy** (don't set environment variables yet)
-
-#### Option B: Deploy via CLI
-
-```bash
-npm i -g vercel
-vercel login
-vercel --prod
-```
-
-### 3. Set Environment Variables in Vercel
-
-Go to your Vercel project → **Settings** → **Environment Variables** and add:
-
-#### Supabase Configuration (Required)
-
-| Variable | Value | Where to Find |
-|----------|-------|---------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://obvqhywolewuiplftfgd.supabase.co` | Project Settings → API → Project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGci...` (your anon key) | Project Settings → API → anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGci...` (your service key) | Project Settings → API → service_role key ⚠️ |
-| `DATABASE_URL` | `postgresql://postgres.PROJECT_REF:[PASSWORD]@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require` | Project Settings → Database → Connection pooling URI + `?sslmode=require` |
-
-⚠️ **Critical**: 
-- Use the **Connection pooling** URI (port `6543`), NOT the direct connection (port `5432`)
-- Verify your project reference ID has the correct letters (e.g., `obvqhywolewuiplftfgd` with `l`)
-- The `DATABASE_URL` must end with `?sslmode=require`
-
-#### Application Configuration (Required)
-
-| Variable | Value | Description |
-|----------|-------|-------------|
-| `GEMINI_API_KEY` | Your Gemini API key | Get from [Google AI Studio](https://aistudio.google.com/apikey) |
-| `ORGANIZER_PASSPHRASE` | Your secure passphrase | Set your own coordinator login password |
-| `SESSION_SECRET` | Random 32+ char string | Generate with: `openssl rand -base64 32` |
-| `NEXT_PUBLIC_APP_URL` | `https://your-app.vercel.app` | Your Vercel app URL |
-
-### 4. Remove Legacy Vercel Storage Variables (If Migrating)
-
-If you previously used Vercel Postgres (Neon) or Vercel Blob, **remove these old variables** from Vercel:
-
-- ❌ `POSTGRES_URL` (unless it's your Supabase pooler URI)
-- ❌ `POSTGRES_PRISMA_URL`
-- ❌ `POSTGRES_URL_NO_SSL`
-- ❌ `POSTGRES_URL_NON_POOLING`
-- ❌ `POSTGRES_USER`, `POSTGRES_HOST`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`
-- ❌ `BLOB_READ_WRITE_TOKEN`
-- ❌ `BLOB_STORE_ID`
-- ❌ `BLOB_READ_WRITE_TOKEN_STORE_ID`
-
-> **Why?** The app prioritizes Supabase variables (`DATABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`) but will fall back to legacy Vercel variables if both are present. Remove old variables to ensure a clean cutover.
-
-### 5. Redeploy
-
-After setting environment variables, trigger a new deployment:
-
-```bash
-vercel --prod
-```
-
-Or use the Vercel dashboard: **Deployments** → **Redeploy**.
-
-### 6. Database Initialization
-
-The database tables are created automatically on first use. No manual migration needed!
-
-When the first API request hits the database, the `DatabaseService.ensureTablesExist()` method will automatically create:
-- `sessions` - User and organizer sessions
-- `reports` - Individual incident reports with photos
-- `incidents` - Aggregated issues
-- `status_events` - Status change audit log
-- All necessary indexes for performance
-
-The Table Editor in Supabase will be empty until the first request is made to the app.
-
-### 7. Verify Deployment
-
-Visit your app's `/api/health` endpoint to verify configuration:
-
-```bash
-curl https://your-app.vercel.app/api/health
-```
-
-Expected response:
-```json
-{
-  "status": "ok",
-  "timestamp": "2026-09-19T04:33:00.000Z",
-  "checks": {
-    "env_vars": {
-      "supabase_database": true,
-      "supabase_storage": true,
-      "ai_analysis": true
-    },
-    "database_connection": {
-      "status": "ok",
-      "message": "Connected"
-    }
-  },
-  "message": "All required services are configured and connected"
-}
-```
-
-## Using the Application
-
-### For Community Members (Reporting)
-
-1. Open the app on your iPhone/Android phone: `https://your-app.vercel.app`
-2. Grant camera and location permissions when prompted
-   - **Camera**: Required for photo capture
-   - **Location**: Optional but recommended (can enter address manually)
-3. Tap **Take Photo** to use the camera (rear camera on mobile)
-   - Or tap **Upload Photo** to select from gallery
-4. Review the AI-generated category and description
-5. Adjust details if needed
-6. Tap **Submit Report**
-7. Save your Report ID from the receipt page
-
-**Note**: The camera feature requires HTTPS. Vercel provides HTTPS automatically for all deployments.
-
-### For Coordinators (Inbox)
-
-1. Navigate to: `https://your-app.vercel.app/coordinator`
-2. Enter the organizer passphrase you set in environment variables
-3. View all submitted incidents with photos
-4. Click an incident to see full details
-5. Export incident reports as JSON for municipal submission
-
-## Local Development
-
-### Setup
-
-```bash
-# Install dependencies
-npm install
-
-# Copy environment template
+```sh
+npm ci
 cp .env.example .env.local
 ```
 
-Edit `.env.local` with your Supabase credentials:
+In PowerShell, use `Copy-Item .env.example .env.local` for the second command.
+Fill in the configuration with values from your own project:
 
-```bash
-# Supabase (get from dashboard - Project Settings → API and Database)
-NEXT_PUBLIC_SUPABASE_URL=https://obvqhywolewuiplftfgd.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-DATABASE_URL=postgresql://postgres.PROJECT_REF:[PASSWORD]@aws-0-REGION.pooler.supabase.com:6543/postgres?sslmode=require
+- `DATABASE_URL`: Supabase Postgres connection string. For a serverless host,
+  use the transaction pooler connection from the Supabase dashboard; the database
+  client disables prepared statements for compatibility with that pooler.
+- `NEXT_PUBLIC_SUPABASE_URL`: the project's Supabase URL.
+- `SUPABASE_SERVICE_ROLE_KEY`: the server-only Supabase service role key.
+- `GEMINI_API_KEY`: the server-only Gemini key.
+- `GEMINI_MODEL`: optional model override; see `.env.example` and
+  `lib/gemini.ts` for the configured default.
 
-# Google Gemini
-GEMINI_API_KEY=your_gemini_api_key_here
+The API URL and database connection must belong to the same Supabase project.
+Never put service or Gemini keys in `NEXT_PUBLIC_*` variables or commit
+`.env.local`. A browser anonymous key is not required by this reporting flow.
 
-# Application
-ORGANIZER_PASSPHRASE=your_secure_passphrase_here
-SESSION_SECRET=your_random_32_char_string_here
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
+### Database and photo storage
 
-### Run Development Server
+1. Review and apply the migrations in filename order using the Supabase SQL
+   editor or your normal migration workflow:
+   `supabase/migrations/202609190000_reporting.sql`, then
+   `supabase/migrations/202609190001_image_analyses.sql`. They contain the base
+   reporting schema and analysis table, with row-level security and server access.
+   Tables are **not** created by API requests.
+2. Create a Supabase Storage bucket named `report-photos` and enable public read
+   access. Uploads use the server credential. Photo URLs can be opened by anyone
+   who has the URL; use consented public-space images for the demo.
+3. Configure the same environment variables on the deployment host before
+   deploying.
 
-```bash
+If you already applied the ZIP's original analysis migration, rerun the updated
+`202609190001_image_analyses.sql` as SQL to add its new status column; migration
+tools may otherwise skip a filename they previously recorded. The file supports
+reapplication.
+
+```sh
 npm run dev
 ```
 
-Visit `http://localhost:3000`
+Open `http://localhost:3000`. On a physical phone, use an HTTPS deployment or
+an HTTPS development tunnel; camera and location permissions require a secure
+context. File upload and manual location entry are available when permissions
+are denied.
 
-**Important**: The camera feature requires HTTPS. To test camera on mobile locally:
+## Checks
 
-1. Use `vercel dev` (provides HTTPS tunnel)
-2. Or use ngrok: `ngrok http 3000` and access via the HTTPS URL
-
-## Camera Compatibility
-
-### ✅ Works Great
-- iPhone Safari (iOS 11+)
-- Android Chrome (Android 5+)
-- Mobile browsers with rear camera
-
-### ⚠️ Limited Support
-- Desktop browsers (no rear camera, often no camera at all)
-- Windows laptops (integrated cameras often fail or have permission issues)
-
-**Fallback**: The app always provides a file upload option when camera access fails or is unavailable.
-
-## Architecture Notes
-
-### Storage Configuration
-
-- **Bucket**: `report-photos` (public read access)
-- **Max file size**: 10MB
-- **Supported formats**: JPEG, PNG, WebP, HEIC, HEIF
-- **Access**: Public URLs for report receipts and coordinator inbox
-- **Auto-creation**: Bucket is created automatically on first upload if it doesn't exist
-
-### Rate Limiting
-
-- **Uploads**: 10 per hour per session
-- **Submissions**: 20 per hour per session
-- **Login Attempts**: 5 attempts, then 15-minute lockout
-
-Rate limits are stored in-memory and reset on deployment. For production scale, consider Redis.
-
-### Database Schema
-
-- `sessions`: User and organizer sessions
-- `reports`: Individual submissions with photos (lowercase 'r')
-- `incidents`: Aggregated issues (may have multiple reports)
-- `status_events`: Incident status change audit log
-
-> **Note**: If you see a `Reports` table (capital 'R') in your database, it is an unused leftover from early development. The application uses the `reports` table (lowercase 'r'). The capital-R table can be safely ignored or dropped.
-
-### AI Analysis
-
-- Model: Gemini 2.0 Flash
-- Timeout: 8 seconds
-- Categories: litter, path_obstruction, road_damage, other
-- Returns: category, description, confidence, routing suggestion
-
-## Environment Variables Reference
-
-See [.env.example](.env.example) for the complete list with detailed comments.
-
-**Required**:
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `DATABASE_URL` (with Transaction pooler URI + `?sslmode=require`)
-- `GEMINI_API_KEY`
-- `ORGANIZER_PASSPHRASE`
-- `SESSION_SECRET`
-- `NEXT_PUBLIC_APP_URL`
-
-## Project Structure
-
+```sh
+npm run test:analysis
+npm run lint
+npm run typecheck
+npm run build
 ```
-app/
-  api/
-    auth/login/      # Organizer authentication
-    health/          # Health check endpoint with live DB connection test
-    incidents/       # Incident list for coordinators
-    media/           # Image proxy for Supabase Storage
-    submit/          # Report submission
-    upload/          # Image upload + AI analysis
-  coordinator/       # Coordinator inbox (protected)
-  receipt/[id]/      # Submission confirmation page
-  page.tsx           # Main reporting interface
-lib/
-  db.ts              # Supabase Postgres database service (with pooler config)
-  storage.ts         # Supabase Storage service
-  gemini.ts          # AI analysis service
-  session.ts         # Session management
+
+`/api/health` checks configuration and database connectivity. It does not prove
+that a Gemini request, photo upload, or full report submission succeeds. Run the
+real reporting flow to validate those services.
+
+Automated tests use mocked external services. Passing local checks is evidence
+for the implementation, not proof of deployed credentials, applied migrations,
+phone compatibility, or measured end-to-end latency.
+
+The project's credentials are configured in Vercel, not in this local checkout.
+The implementation work does not verify those secret values or run live Gemini
+and Supabase checks. Add a separate local development configuration if needed.
+
+## Phase 1 acceptance
+
+The requested Phase 1 scope is the reporting page, saved AI analysis, and durable
+receipt. The original planning PDF is reference material; its triage and
+community-action features are outside this build.
+
+On the deployed HTTPS site, complete these checks before calling Phase 1
+demonstrated:
+
+- Submit three consecutive reports: one camera capture, one file upload, and
+  one with location permission denied and a manually entered location.
+- Refresh each receipt and confirm that the photo, corrected category,
+  location, and saved report remain available.
+- Simulate an unavailable Gemini service and complete a manual report.
+- Repeat a submission for the same saved analysis and confirm it returns one
+  report. A storage or database failure must never show a successful receipt.
+- Measure ordinary report completion and image-processing time on a phone.
+  “One minute” is the product goal, not a verified latency guarantee.
+
+These require a configured Supabase project, Gemini access, and a deployed test
+device. They cannot be inferred from a successful local build.
+
+## Project layout
+
+```text
+app/page.tsx                       Capture, analysis review, and submission
+app/receipt/[id]/page.tsx          Durable report receipt
+app/api/upload/route.ts           Validate, normalize, store, analyze, and save
+app/api/submit/route.ts           Authoritative report submission
+app/api/health/route.ts           Configuration and database health
+lib/gemini.ts                    Server-side Gemini request
+lib/hazard-analysis.mjs          Prompt, schema, and validation
+lib/analysis-store.ts            Saved analysis persistence
+lib/analysis-labels.ts           Category labels
+lib/db.ts                        Reporting transactions and persistence
+lib/storage.ts                   Supabase photo storage
+supabase/migrations/             Explicit database setup
+tests/                           Automated regression checks
 ```
+
+See [docs/image-analysis.md](docs/image-analysis.md) for the pipeline, score
+definitions, trust boundaries, and operational limits.
 
 ## Troubleshooting
 
-### Camera not working on iPhone
-- Ensure you're accessing via **HTTPS** (Vercel provides this)
-- Check that Safari has camera permissions: Settings → Safari → Camera
-- Try uploading a photo instead (always works)
-
-### Database connection errors
-- **Verify database connection** at `https://your-app.vercel.app/api/health`
-- **For Supabase**: Ensure you're using the **Transaction pooler** URI (port `6543`, NOT `5432`)
-- **For Supabase**: Verify your project reference ID is correct (check for missing/extra letters like `l`)
-- **Check** that `DATABASE_URL` includes `?sslmode=require` at the end
-- **Verify** database credentials in Vercel environment variables
-- **Common error**: "too many connections" means you're using port 5432 instead of the pooler (6543)
-- Tables are auto-created on first use
-
-### Image upload fails
-- Verify all Supabase environment variables are set
-- Check that the `report-photos` bucket exists in Supabase Storage
-- Verify bucket is set to **public** for read access
-- Check file size (max 10MB)
-
-### AI analysis returns null
-- Verify `GEMINI_API_KEY` is valid
-- Check Gemini API quotas in Google AI Studio
-- Analysis timeout is 8 seconds (images are still saved)
-
-### Health check shows degraded status
-- Visit `/api/health` to see which services are not configured or unreachable
-- Check `database_connection.status` - if "error", see message for details
-- Verify all required environment variables are set in Vercel
-- Redeploy after adding missing variables
-
-## Migration from Vercel Postgres/Blob
-
-If you're migrating from Vercel Postgres (Neon) and Vercel Blob:
-
-1. **Set up Supabase** following the steps above
-2. **Add Supabase environment variables** to Vercel (keep old ones temporarily)
-3. **Deploy** the new version
-4. **Test** that everything works with Supabase
-5. **Remove old Vercel storage variables** (listed in step 4 above)
-6. **Final redeploy** to ensure clean cutover
-
-The app will prefer Supabase variables over legacy Vercel variables, so you can test with both present.
-
-## Roadmap
-
-**Phase 1 (Current)**: Core reporting + coordinator inbox
-- ✅ Mobile camera capture
-- ✅ AI categorization
-- ✅ Supabase Postgres + Storage with Transaction pooler
-- ✅ Coordinator authentication
-- ✅ Live database health checks
-
-**Phase 2 (Future)**:
-- 🔜 Interactive map view
-- 🔜 Status updates
-- 🔜 Public API for municipal integration
-- 🔜 Email notifications
-
-## Contributing
-
-This is a hackathon project. Feel free to fork and adapt!
+- **Upload fails:** confirm the storage bucket exists, service credentials are
+  present, and the database migration is applied. Retry with JPEG, PNG, or WebP.
+  HEIC/HEIF support depends on the browser being able to decode and convert it;
+  if conversion fails, export a JPEG first.
+- **Manual analysis fallback appears:** check `GEMINI_API_KEY`, model access,
+  quota, and network availability. A saved manual report remains valid evidence.
+- **Database unavailable:** check the project's pooler connection string and
+  password, and inspect server logs. Do not share credentials in screenshots.
+- **Camera or location is denied:** use file upload and enter the location
+  manually. Confirm the phone is using HTTPS before testing permissions again.
 
 ## License
 

@@ -1,139 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SessionService } from '@/lib/session';
 import { DatabaseService } from '@/lib/db';
-import { nanoid } from 'nanoid';
+import { validateReportInput } from '@/lib/report-input';
+import { checkRequestOrigin, readLimitedBody } from '@/lib/request-body';
+import { HttpError } from '@/lib/hazard-analysis.mjs';
 
-// Rate limiting for submissions
-const submitRateLimit = new Map<string, { count: number; resetTime: number }>();
-const MAX_SUBMISSIONS_PER_HOUR = 20;
-
-function checkSubmitRateLimit(sessionId: string): boolean {
-  const now = Date.now();
-  const record = submitRateLimit.get(sessionId);
-
-  if (!record || now > record.resetTime) {
-    submitRateLimit.set(sessionId, {
-      count: 1,
-      resetTime: now + 60 * 60 * 1000,
-    });
-    return true;
-  }
-
-  if (record.count >= MAX_SUBMISSIONS_PER_HOUR) {
-    return false;
-  }
-
-  record.count++;
-  return true;
-}
-
+export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
+    checkRequestOrigin(req);
+    const bytes = await readLimitedBody(req, 16 * 1024);
+    let body: unknown;
+    try { body = JSON.parse(new TextDecoder().decode(bytes)); }
+    catch { throw new HttpError(400, 'Invalid report format.'); }
+    const input = validateReportInput(body);
     const sessionId = await SessionService.getSession();
-    
-    if (!sessionId) {
-      return NextResponse.json(
-        { error: 'Session not found' },
-        { status: 401 }
-      );
-    }
-
-    // Rate limiting
-    if (!checkSubmitRateLimit(sessionId)) {
-      return NextResponse.json(
-        { error: 'Too many submissions. Please wait before submitting again.' },
-        { status: 429 }
-      );
-    }
-
-    const body = await req.json();
-    const {
-      image_path,
-      image_hash,
-      category,
-      short_label,
-      full_description,
-      user_description,
-      latitude,
-      longitude,
-      location_accuracy,
-      location_source,
-      location_address,
-      ai_confidence,
-      ai_model,
-      ai_routing,
-      user_corrected,
-      idempotency_key,
-    } = body;
-
-    // Validate required fields
-    if (!image_path || !image_hash || !category || !short_label) {
-      return NextResponse.json(
-        { error: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
-
-    // Check for duplicate submission (idempotency)
-    if (idempotency_key) {
-      const existing = await DatabaseService.getReportByIdempotencyKey(idempotency_key);
-      if (existing) {
-        const incident = existing.incident_id ? await DatabaseService.getIncident(existing.incident_id) : null;
-        return NextResponse.json({
-          success: true,
-          report_id: existing.id,
-          incident_id: existing.incident_id,
-          incident,
-          duplicate: true,
-        });
-      }
-    }
-
-    // Create incident
-    const incidentId = await DatabaseService.createIncident({
-      category,
-      short_label,
-      full_description,
-      latitude,
-      longitude,
-      location_address,
-    });
-
-    // Create report
-    const reportId = await DatabaseService.createReport({
-      session_id: sessionId,
-      incident_id: incidentId,
-      image_path,
-      image_hash,
-      category,
-      short_label,
-      full_description,
-      user_description,
-      latitude,
-      longitude,
-      location_accuracy,
-      location_source,
-      location_address,
-      ai_confidence,
-      ai_model,
-      ai_routing,
-      user_corrected: user_corrected ? 1 : 0,
-      idempotency_key: idempotency_key || nanoid(),
-    });
-
-    const incident = await DatabaseService.getIncident(incidentId);
-
-    return NextResponse.json({
-      success: true,
-      report_id: reportId,
-      incident_id: incidentId,
-      incident,
-    });
+    if (!sessionId) throw new HttpError(401, 'Session expired. Upload the photo again.');
+    if (!await DatabaseService.checkRateLimit(sessionId, 'submit', 60)) throw new HttpError(429, 'Too many submissions. Please try again later.');
+    const { report, duplicate } = await DatabaseService.submitReport(sessionId, input);
+    return NextResponse.json({ success: true, report_id: report.id, incident_id: report.incident_id, duplicate }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
-    console.error('Submission error:', error);
-    return NextResponse.json(
-      { error: 'Failed to submit report' },
-      { status: 500 }
-    );
+    const known = error instanceof HttpError;
+    return NextResponse.json({ error: known ? error.message : 'Your report could not be saved. Please retry; your photo is still ready.' }, { status: known ? error.status : 503 });
   }
 }

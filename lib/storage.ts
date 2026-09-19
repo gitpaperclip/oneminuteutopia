@@ -1,3 +1,4 @@
+import 'server-only';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
@@ -12,8 +13,8 @@ export class StorageService {
   private static getSupabaseClient(): ReturnType<typeof createClient> {
     if (this.supabase) return this.supabase;
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error(
@@ -22,6 +23,7 @@ export class StorageService {
     }
 
     this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      global: { fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(12_000) }) },
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -29,30 +31,6 @@ export class StorageService {
     });
 
     return this.supabase;
-  }
-
-  /**
-   * Verify the storage bucket exists.
-   * The bucket 'report-photos' must be created manually in Supabase dashboard before use.
-   */
-  private static async ensureBucketExists(): Promise<void> {
-    const supabase = this.getSupabaseClient();
-
-    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-
-    if (listError) {
-      console.error('Error listing buckets:', listError);
-      throw new Error(`Failed to list storage buckets: ${listError.message}`);
-    }
-
-    const bucketExists = buckets?.some((bucket) => bucket.name === this.bucketName);
-
-    if (!bucketExists) {
-      throw new Error(
-        `Storage bucket '${this.bucketName}' does not exist. Please create it in Supabase dashboard: ` +
-        `Storage → New bucket → Name: ${this.bucketName} → Public: ✅ Enabled`
-      );
-    }
   }
 
   /**
@@ -70,9 +48,6 @@ export class StorageService {
     
     const filename = `${nanoid()}-${hash.substring(0, 8)}.${ext}`;
     
-    // Ensure bucket exists before uploading
-    await this.ensureBucketExists();
-
     const supabase = this.getSupabaseClient();
     
     // Upload to Supabase Storage

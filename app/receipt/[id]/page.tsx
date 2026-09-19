@@ -1,115 +1,44 @@
 import { DatabaseService } from '@/lib/db';
+import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 
-interface PageProps {
-  params: Promise<{
-    id: string;
-  }>;
-}
+/* eslint-disable @next/next/no-img-element -- stored report URLs use the configured Supabase public bucket */
 
-export default async function ReceiptPage({ params }: PageProps) {
+export default async function ReceiptPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const report = await DatabaseService.getReport(id);
+  if (!report) notFound();
 
-  if (!report) {
-    notFound();
-  }
-
-  const incident = report.incident_id ? await DatabaseService.getIncident(report.incident_id) : null;
+  const reportLocation = report.location_address || (
+    report.latitude !== null && report.longitude !== null
+      ? `${report.latitude.toFixed(5)}, ${report.longitude.toFixed(5)}`
+      : 'Location not provided'
+  );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-4 py-4">
-        <h1 className="text-2xl font-bold text-gray-900">Report Submitted</h1>
-      </header>
-
-      <main className="px-4 py-6 max-w-2xl mx-auto">
-        <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6">
-          <div className="flex items-center gap-3 mb-2">
-            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h2 className="text-xl font-bold text-green-900">Thank you!</h2>
-          </div>
-          <p className="text-green-800">
-            Your report has been successfully submitted and will be reviewed by community coordinators.
-          </p>
+    <div className="site-shell">
+      <header className="site-header"><Link href="/" className="brand"><span className="brand-mark" aria-hidden="true">✳</span><span>one minute<span className="brand-light"> utopia</span></span></Link><span className="header-note">Small reports. Better places.</span></header>
+      <main className="receipt-main">
+        <div className="receipt-intro">
+          <div className="receipt-check"><svg width="27" height="27" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="m5 12 4 4L19 6" /></svg></div>
+          <h1>A little care, recorded.</h1>
+          <p>Your report and photo have been saved. Thank you for noticing what could make your neighborhood better.</p>
         </div>
-
-        <div className="bg-white rounded-lg shadow-sm p-6 space-y-4 mb-6">
-          <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Report ID</h3>
-            <p className="text-lg font-mono text-gray-900">{report.id}</p>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Issue Type</h3>
-            <p className="text-gray-900 capitalize">{report.category.replace('_', ' ')}</p>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Description</h3>
-            <p className="text-gray-900">{report.short_label}</p>
-          </div>
-
-          {report.latitude && report.longitude && (
-            <div>
-              <h3 className="text-sm font-medium text-gray-500 mb-1">Location</h3>
-              <p className="text-gray-900">
-                {report.location_address || `${report.latitude.toFixed(6)}, ${report.longitude.toFixed(6)}`}
-              </p>
-            </div>
-          )}
-
-          <div>
-            <h3 className="text-sm font-medium text-gray-500 mb-1">Submitted</h3>
-            <p className="text-gray-900">
-              {DatabaseService.formatTimestamp(report.created_at, 'locale')}
-            </p>
-          </div>
-
-          {incident && (
-            <div>
-              <h3 className="text-sm font-medium text-gray-500 mb-1">Status</h3>
-              <p className="text-gray-900 capitalize">{incident.status}</p>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="font-medium text-gray-900 mb-2">What happens next?</h3>
-          <ul className="space-y-2 text-sm text-gray-700">
-            <li className="flex items-start gap-2">
-              <span className="text-blue-600 mt-0.5">•</span>
-              <span>Community coordinators will review your report</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-blue-600 mt-0.5">•</span>
-              <span>The issue will be prioritized based on severity and location</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-blue-600 mt-0.5">•</span>
-              <span>Appropriate action will be coordinated (community cleanup or municipal referral)</span>
-            </li>
-          </ul>
-        </div>
-
-        <div className="mt-6 flex gap-3">
-          <Link
-            href="/"
-            className="flex-1 text-center bg-blue-600 text-white py-3 px-6 rounded-lg font-medium hover:bg-blue-700 transition"
-          >
-            Report Another Issue
-          </Link>
-        </div>
-
-        <div className="mt-6 p-4 bg-gray-100 rounded-lg">
-          <p className="text-sm text-gray-600">
-            Save this page or screenshot your Report ID to check on the status later.
-          </p>
-        </div>
+        <figure className="receipt-photo"><img src={report.image_path} alt="Photo saved with your neighborhood report" /><figcaption>Your saved photo</figcaption></figure>
+        <section className="receipt-card" aria-label="Your report receipt">
+          <dl>
+            <div className="receipt-item"><dt>Report reference</dt><dd className="receipt-id">{report.id}</dd></div>
+            <div className="receipt-item"><dt>Issue type</dt><dd>{CATEGORY_LABELS[report.category] || report.category.replaceAll('_', ' ')}</dd></div>
+            <div className="receipt-item"><dt>Location</dt><dd>{reportLocation}</dd></div>
+            {report.user_description && <div className="receipt-item"><dt>Your details</dt><dd>{report.user_description}</dd></div>}
+            <div className="receipt-item"><dt>Submitted</dt><dd>{DatabaseService.formatTimestamp(report.created_at, 'locale')}</dd></div>
+          </dl>
+        </section>
+        <div className="receipt-next"><h2>Keep your reference</h2><p>Bookmark this page or save your report reference for your records. Saving a report does not automatically send it to a local service or emergency responder.</p></div>
+        <Link href="/" className="button button-primary">Report another issue <span aria-hidden="true">→</span></Link>
       </main>
+      <footer className="site-footer"><span>One Minute Utopia</span><p>A small step toward a place we all care for.</p></footer>
     </div>
   );
 }
