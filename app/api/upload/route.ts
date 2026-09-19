@@ -114,19 +114,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 3: Save image to Blob storage
+    // Step 3: Save image to Supabase Storage
     try {
       const result = await StorageService.saveImage(buffer, mimeType);
       imagePath = result.path;
       hash = result.hash;
     } catch (error) {
-      console.error('Blob storage error:', error);
+      console.error('Storage error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       
-      // Check for missing blob configuration
-      if (errorMessage.includes('BLOB_READ_WRITE_TOKEN') || errorMessage.includes('token') || errorMessage.includes('store')) {
+      // Check for missing Supabase configuration
+      if (errorMessage.includes('Supabase') || errorMessage.includes('SUPABASE')) {
         return NextResponse.json(
-          { error: 'Photo storage is not configured. Please ensure Vercel Blob is connected (needs BLOB_READ_WRITE_TOKEN, BLOB_STORE_ID, or BLOB_READ_WRITE_TOKEN_STORE_ID).' },
+          { error: 'Photo storage is not configured. Please ensure Supabase is connected (needs NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY).' },
           { status: 503 }
         );
       }

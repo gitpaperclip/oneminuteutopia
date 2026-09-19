@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Media proxy endpoint for serving private Vercel Blob images.
+ * Media proxy endpoint for serving images from Supabase Storage or legacy Vercel Blob.
  * 
- * When using OIDC authentication with a private Blob store, blob URLs are not publicly accessible.
- * This endpoint proxies those URLs through the Next.js server with proper authentication.
+ * With Supabase Storage using public buckets, most images are directly accessible.
+ * This endpoint provides a proxy for compatibility and potential private storage in the future.
  * 
- * Usage: /api/media?url=https://...blob.vercel-storage.com/...
+ * Usage: /api/media?url=https://...supabase.co/storage/v1/object/public/...
+ *        /api/media?url=https://...blob.vercel-storage.com/...
  */
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url');
@@ -15,12 +16,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
   }
 
-  // Validate that the URL is from Vercel Blob storage
+  // Validate that the URL is from Supabase Storage or Vercel Blob
   try {
     const parsedUrl = new URL(url);
-    if (!parsedUrl.hostname.endsWith('.vercel-storage.com')) {
+    const isSupabase = parsedUrl.hostname.endsWith('.supabase.co');
+    const isVercelBlob = parsedUrl.hostname.endsWith('.vercel-storage.com');
+    
+    if (!isSupabase && !isVercelBlob) {
       return NextResponse.json(
-        { error: 'Invalid blob URL - must be from vercel-storage.com' },
+        { error: 'Invalid URL - must be from Supabase Storage or Vercel Blob' },
         { status: 400 }
       );
     }
@@ -29,19 +33,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Fetch the blob with server-side credentials
-    // The @vercel/blob SDK automatically uses OIDC token or BLOB_READ_WRITE_TOKEN
-    const response = await fetch(url, {
-      headers: {
-        // Include Authorization header if using token auth
-        ...(process.env.BLOB_READ_WRITE_TOKEN && {
-          Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`,
-        }),
-      },
-    });
+    // Fetch the image
+    // For Supabase public storage, no special auth needed
+    // For Vercel Blob with token auth, include the token
+    const headers: HeadersInit = {};
+    
+    // Add Authorization for legacy Vercel Blob if token exists
+    if (url.includes('vercel-storage.com') && process.env.BLOB_READ_WRITE_TOKEN) {
+      headers.Authorization = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
+    }
+
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
-      console.error('Blob fetch failed:', response.status, response.statusText);
+      console.error('Image fetch failed:', response.status, response.statusText);
       return NextResponse.json(
         { error: 'Failed to fetch image from storage' },
         { status: response.status }

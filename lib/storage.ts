@@ -1,25 +1,69 @@
 import crypto from 'crypto';
-import { put, PutBlobResult } from '@vercel/blob';
+import { createClient } from '@supabase/supabase-js';
 import { nanoid } from 'nanoid';
 
 export class StorageService {
+  private static supabase: ReturnType<typeof createClient> | null = null;
+  private static bucketName = 'report-photos';
+
   /**
-   * Get the Blob store ID from environment variables.
-   * Supports both standard OIDC (BLOB_STORE_ID) and custom-prefix OIDC (BLOB_READ_WRITE_TOKEN_STORE_ID).
+   * Get or create a Supabase client instance using service role key for server-side operations.
    */
-  private static getStoreId(): string | undefined {
-    return process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN_STORE_ID;
+  private static getSupabaseClient(): ReturnType<typeof createClient> {
+    if (this.supabase) return this.supabase;
+
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error(
+        'Supabase is not configured. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.'
+      );
+    }
+
+    this.supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+
+    return this.supabase;
   }
 
   /**
-   * Check if we should use private access mode.
-   * Private mode is preferred when using OIDC authentication.
+   * Ensure the storage bucket exists. Creates it if necessary with public access.
    */
-  private static shouldUsePrivateAccess(): boolean {
-    const storeId = this.getStoreId();
-    return !!storeId;
+  private static async ensureBucketExists(): Promise<void> {
+    const supabase = this.getSupabaseClient();
+
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+
+    if (listError) {
+      console.error('Error listing buckets:', listError);
+      throw listError;
+    }
+
+    const bucketExists = buckets?.some((bucket) => bucket.name === this.bucketName);
+
+    if (!bucketExists) {
+      const { error: createError } = await supabase.storage.createBucket(this.bucketName, {
+        public: true,
+        fileSizeLimit: 10485760, // 10MB
+      });
+
+      if (createError) {
+        console.error('Error creating bucket:', createError);
+        throw createError;
+      }
+
+      console.log(`Created Supabase Storage bucket: ${this.bucketName}`);
+    }
   }
 
+  /**
+   * Save an image to Supabase Storage and return its public URL and hash.
+   */
   static async saveImage(buffer: Buffer, mimeType: string): Promise<{ path: string; hash: string }> {
     const hash = crypto.createHash('sha256').update(buffer).digest('hex');
     
@@ -32,30 +76,74 @@ export class StorageService {
     
     const filename = `${nanoid()}-${hash.substring(0, 8)}.${ext}`;
     
-    // Prepare options for Blob upload
-    const storeId = this.getStoreId();
-    const usePrivateAccess = this.shouldUsePrivateAccess();
-    
-    const options: {
-      access: 'public' | 'private';
-      contentType: string;
-      storeId?: string;
-    } = {
-      access: usePrivateAccess ? 'private' : 'public',
-      contentType: mimeType,
-    };
+    // Ensure bucket exists before uploading
+    await this.ensureBucketExists();
 
-    // Add storeId for OIDC authentication if available
-    if (storeId) {
-      options.storeId = storeId;
+    const supabase = this.getSupabaseClient();
+    
+    // Upload to Supabase Storage
+    const { data, error } = await supabase.storage
+      .from(this.bucketName)
+      .upload(filename, buffer, {
+        contentType: mimeType,
+        cacheControl: '31536000', // 1 year
+        upsert: false,
+      });
+
+    if (error) {
+      console.error('Supabase Storage upload error:', error);
+      throw new Error(`Failed to upload image to Supabase Storage: ${error.message}`);
     }
-    
-    // Upload to Vercel Blob
-    const blob: PutBlobResult = await put(filename, buffer, options);
-    
+
+    // Get the public URL
+    const { data: urlData } = supabase.storage
+      .from(this.bucketName)
+      .getPublicUrl(data.path);
+
     return {
-      path: blob.url,
+      path: urlData.publicUrl,
       hash,
     };
+  }
+
+  /**
+   * Get a signed URL for a private file (if needed in the future).
+   * Currently using public bucket, but this method is available for private storage.
+   */
+  static async getSignedUrl(path: string, expiresIn: number = 3600): Promise<string> {
+    const supabase = this.getSupabaseClient();
+    
+    // Extract the file path from the full URL if needed
+    const filename = path.split('/').pop() || path;
+
+    const { data, error } = await supabase.storage
+      .from(this.bucketName)
+      .createSignedUrl(filename, expiresIn);
+
+    if (error) {
+      console.error('Error creating signed URL:', error);
+      throw error;
+    }
+
+    return data.signedUrl;
+  }
+
+  /**
+   * Delete an image from Supabase Storage.
+   */
+  static async deleteImage(path: string): Promise<void> {
+    const supabase = this.getSupabaseClient();
+    
+    // Extract the filename from the full URL
+    const filename = path.split('/').pop() || path;
+
+    const { error } = await supabase.storage
+      .from(this.bucketName)
+      .remove([filename]);
+
+    if (error) {
+      console.error('Error deleting image:', error);
+      throw error;
+    }
   }
 }
