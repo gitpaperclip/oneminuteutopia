@@ -3,6 +3,7 @@ import type { IncidentBbox, MapIncident, MapIncidentsResponse } from '@/lib/map-
 export interface MapListFilters {
   category?: string;
   incident_type?: string;
+  tag?: string;
   common_only?: boolean;
   limit?: number;
   bbox?: IncidentBbox;
@@ -31,6 +32,7 @@ export function parseMapFilters(searchParams: URLSearchParams): MapListFilters {
   return {
     category: searchParams.get('category') || undefined,
     incident_type: searchParams.get('incident_type') || undefined,
+    tag: searchParams.get('tag') || undefined,
     common_only: searchParams.get('common_only') === 'true',
     limit: Number.isInteger(limit) && limit >= 1 && limit <= 100 ? limit : 50,
   };
@@ -40,6 +42,7 @@ export function incidentsQuery(filters: MapListFilters): string {
   const query = new URLSearchParams();
   if (filters.category) query.set('category', filters.category);
   if (filters.incident_type) query.set('incident_type', filters.incident_type);
+  if (filters.tag) query.set('tag', filters.tag);
   if (filters.common_only) query.set('common_only', 'true');
   query.set('limit', String(filters.limit ?? 50));
   if (filters.bbox) {
@@ -55,6 +58,7 @@ export function urlFiltersQuery(filters: MapListFilters): string {
   return incidentsQuery({
     category: filters.category,
     incident_type: filters.incident_type,
+    tag: filters.tag,
     common_only: filters.common_only,
     limit: filters.limit,
   });

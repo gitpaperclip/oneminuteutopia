@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import { CATEGORY_OPTIONS } from '@/lib/baltimore-routes';
-import { INCIDENT_TYPES, INCIDENT_TYPES_BY_CATEGORY } from '@/lib/incident-taxonomy.mjs';
+import { CONTEXT_TAGS, INCIDENT_TYPES, INCIDENT_TYPES_BY_CATEGORY } from '@/lib/incident-taxonomy.mjs';
 import { slugLabel, type MapListFilters } from '@/components/map/incidents';
 
 const LIMITS = [20, 50, 100] as const;
@@ -77,6 +77,20 @@ export function MapFilters({
         >
           <option value="">All</option>
           {types.map((value) => (
+            <option key={value} value={value}>
+              {slugLabel(value)}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Tag">
+        <select
+          className={selectClass}
+          value={filters.tag ?? ''}
+          onChange={(event) => onChange({ ...filters, tag: event.target.value || undefined })}
+        >
+          <option value="">All</option>
+          {CONTEXT_TAGS.map((value) => (
             <option key={value} value={value}>
               {slugLabel(value)}
             </option>
