@@ -38,6 +38,7 @@ export function MapShell() {
   const [error, setError] = useState<string | null>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const loading = loadedKey !== queryKey;
 
   useEffect(() => {
@@ -56,7 +57,7 @@ export function MapShell() {
         setLoadedKey(queryKey);
       });
     return () => controller.abort();
-  }, [filters, queryKey]);
+  }, [filters, queryKey, retryTick]);
 
   const visible = loadedKey === queryKey ? incidents : null;
   const pins = useMemo(() => mappableIncidents(visible ?? []), [visible]);
@@ -84,7 +85,9 @@ export function MapShell() {
                 <p className="text-xs text-slate-500">
                   {loading
                     ? 'Loading GET /api/incidents…'
-                    : `${pins.length} pin${pins.length === 1 ? '' : 's'} from saved incidents`}
+                    : visibleError
+                      ? 'Could not read the live incident API'
+                      : `${pins.length} pin${pins.length === 1 ? '' : 's'} from saved incidents`}
                   {unmapped > 0 ? ` · ${unmapped} without GPS` : ''}
                 </p>
               </div>
@@ -100,8 +103,18 @@ export function MapShell() {
             <span><span className="mr-1 inline-block size-2.5 rounded-full bg-red-600" />Emergency</span>
           </p>
           {visibleError && (
-            <p className="toast-error mt-2 rounded-xl" role="alert">
-              {visibleError}
+            <p className="toast-error mt-2 flex items-center justify-between gap-3 rounded-xl" role="alert">
+              <span>{visibleError}</span>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() => {
+                  setLoadedKey(null);
+                  setRetryTick((tick) => tick + 1);
+                }}
+              >
+                Retry
+              </button>
             </p>
           )}
         </div>
