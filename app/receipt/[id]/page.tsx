@@ -4,12 +4,13 @@ import { DatabaseService, type Incident } from '@/lib/db';
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import { handoffsForCategory } from '@/lib/baltimore-routes';
 import { displayMockReference, mockAgencyLabel } from '@/lib/mock-agency';
+import { formatUnitScore, GOVERNMENT_REPORT_THRESHOLD } from '@/lib/incident-scoring';
 
 /* eslint-disable @next/next/no-img-element -- public mark + stored media URLs */
 
 function clusterCopy(count: number) {
   if (count >= 2) return `${count} people reported this nearby.`;
-  return '1 report so far. The demo worker files after a second nearby report of the same type.';
+  return '1 report so far. More independent reports raise the incident score.';
 }
 
 function mockPortalCopy(incident: Incident | undefined) {
@@ -39,21 +40,24 @@ function mockPortalCopy(incident: Incident | undefined) {
       body: `Filed with ${agency} — ${reference}. This is a demo stand-in, not Baltimore City.`,
     };
   }
-  if (incident.mock_status === 'failed') {
+  if (incident.mock_status === 'failed' || incident.government_report_status === 'failed') {
     return {
       title: 'Mock city portal',
       body: 'Mock filing failed. Refresh after the worker retries, or check the worker terminal. This is not a Baltimore City case.',
     };
   }
-  if (incident.evidence_count < 2) {
+  if (
+    incident.government_report_status === 'ready_to_submit'
+    || incident.incident_score >= GOVERNMENT_REPORT_THRESHOLD
+  ) {
     return {
       title: 'Mock city portal',
-      body: 'Waiting for more nearby reports before the demo worker files this.',
+      body: 'Queued for the demo worker. Refresh this receipt after it runs. This is not a Baltimore City case.',
     };
   }
   return {
     title: 'Mock city portal',
-    body: 'Queued for the demo worker. Refresh this receipt after it runs. This is not a Baltimore City case.',
+    body: 'Waiting for more independent reports before automatic mock filing.',
   };
 }
 
@@ -91,6 +95,12 @@ export default async function ReceiptPage({
       <section className="receipt-status" aria-label="Incident status">
         <h2>This incident</h2>
         <p>{clusterCopy(evidenceCount)}</p>
+        {incident ? (
+          <p>
+            Incident score {formatUnitScore(incident.incident_score)}
+            {report.case_score != null ? ` · your case score ${formatUnitScore(report.case_score)}` : ''}.
+          </p>
+        ) : null}
         <p>
           <strong>{mock.title}.</strong> {mock.body}
         </p>

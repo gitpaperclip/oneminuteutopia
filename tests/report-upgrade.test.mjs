@@ -12,6 +12,7 @@ const migrations = await Promise.all([
   '202609190004_mock_government_submission.sql',
   '202609190005_mock_agency.sql',
   '202609190006_reports_realtime.sql',
+  '202609190007_incident_scoring.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Historical fixtures intentionally do not derive their schema from the new migrations.
@@ -125,6 +126,7 @@ test('upgrading main preserves legacy records and timestamps while supporting th
     ...oldReport, seriousness: null, analysis_status: null,
     incident_type: 'other_hazard', context_summary: null, tags: ['other_hazard'],
     baltimore_service_candidates: [], routing_disposition: 'manual_review',
+    case_score: 0,
   });
   assert.deepEqual((await db.query('SELECT * FROM incidents')).rows[0], {
     ...oldIncident, incident_type: 'other_hazard', tags: ['other_hazard'],
@@ -133,6 +135,7 @@ test('upgrading main preserves legacy records and timestamps while supporting th
     baltimore_service_candidates: [], routing_disposition: 'manual_review',
     mock_reference_id: null, mock_submitted_at: null, mock_status: 'pending', mock_error: null,
     mock_agency: null,
+    incident_score: 0, report_count: 1, government_report_status: 'not_ready',
   });
   assert.deepEqual((await db.query('SELECT * FROM sessions')).rows[0], oldSession);
   assert.deepEqual((await db.query('SELECT * FROM status_events')).rows[0], oldEvent);
@@ -173,6 +176,7 @@ test('upgrading an already-applied overlay preserves its analysis and enables ma
     context_summary: 'Legacy analysis; no image context was captured.',
     context_tags: [], tags: ['roads_and_sidewalks_unspecified'],
     baltimore_service_candidates: [], routing_disposition: 'manual_review',
+    case_score: 0.564,
   });
   const retry = await DatabaseService.submitReport(legacySession, validateReportInput({
     analysis_id: analysisId, category: 'roads_and_sidewalks', location_source: 'manual', location_address: 'Original location',
@@ -202,5 +206,6 @@ test('upgrading an already-applied overlay preserves its analysis and enables ma
     context_summary: 'Legacy analysis; no image context was captured.',
     context_tags: [], tags: ['roads_and_sidewalks_unspecified'],
     baltimore_service_candidates: [], routing_disposition: 'manual_review',
+    case_score: 0.564,
   });
 });

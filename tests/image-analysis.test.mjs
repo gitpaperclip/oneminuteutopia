@@ -5,6 +5,7 @@ import { ANALYSIS_TIMEOUT_MS, GeminiAnalysisError, GeminiService } from '../lib/
 import { AnalysisStore } from '../lib/analysis-store.ts';
 import { CONTEXT_TAGS, fallbackIncidentType } from '../lib/incident-taxonomy.mjs';
 import { assertCompleteBaltimoreRouting, baltimoreRouteForIncidentType } from '../lib/baltimore-311-routing.mjs';
+import { caseScoreFromAnalysis } from '../lib/incident-scoring.ts';
 
 const originalEnvironments = new WeakMap();
 function setEnv(t, key, value) {
@@ -242,8 +243,9 @@ test('Supabase persists the assessment using server credentials', async t => {
     assert.equal(data.seriousness, 6);
     assert.equal(data.ai_confidence, 80);
     assert.equal(data.analysis_status, 'complete');
-    assert.equal(data.prompt_version, '2');
+    assert.equal(data.prompt_version, '3');
     assert.equal(data.incident_type, 'pothole');
+    assert.equal(data.case_score, caseScoreFromAnalysis(6, 80, 'complete'));
     assert.deepEqual(data.tags, ['pothole', 'roadway']);
     assert.deepEqual(data.baltimore_service_candidates, ['TRM-Potholes', 'TRM-Pickup Pothole']);
     assert.equal(data.routing_disposition, '311');
@@ -293,6 +295,7 @@ test('manual fallback is saved as unavailable with no fabricated seriousness', a
     assert.equal(data.category, 'unable_to_assess');
     assert.equal(data.seriousness, null);
     assert.equal(data.ai_confidence, 0);
+    assert.equal(data.case_score, 0);
     return response([{ id: 'saved', ...data }], 201);
   });
   await AnalysisStore.save({

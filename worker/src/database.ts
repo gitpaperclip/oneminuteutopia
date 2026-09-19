@@ -86,17 +86,18 @@ export async function markIncidentSubmitted(
     mock_status: 'submitted' satisfies MockStatus,
     mock_error: null,
     mock_agency: agency,
+    government_report_status: 'submitted',
   };
   const { error } = await client.from('incidents').update(payload).eq('id', incidentId);
 
   if (!error) return;
 
-  const { mock_agency: _ignored, ...withoutAgency } = payload;
-  const retry = await client.from('incidents').update(withoutAgency).eq('id', incidentId);
+  const { mock_agency: _ignored, government_report_status: _status, ...withoutNewColumns } = payload;
+  const retry = await client.from('incidents').update(withoutNewColumns).eq('id', incidentId);
   if (retry.error) {
     throw new Error(`Could not save mock reference id: ${retry.error.message}`);
   }
-  console.warn('Saved mock confirmation without mock_agency. Apply 202609190005_mock_agency.sql.');
+  console.warn('Saved mock confirmation without mock_agency/government_report_status. Apply later scoring migrations.');
 }
 
 export async function markIncidentFailed(
@@ -109,6 +110,7 @@ export async function markIncidentFailed(
     .update({
       mock_status: 'failed' satisfies MockStatus,
       mock_error: message.replace(/\s+/g, ' ').slice(0, 180),
+      government_report_status: 'failed',
     })
     .eq('id', incidentId);
 

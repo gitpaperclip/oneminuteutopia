@@ -2,11 +2,13 @@
 
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import { formatSeverity, severityStyle } from '@/lib/severity';
+import { formatUnitScore } from '@/lib/incident-scoring';
 
 export interface AnalysisCardProps {
   category: string;
   seriousness: number | null;
   ai_confidence: number;
+  case_score?: number | null;
   onContinue: () => void;
 }
 
@@ -14,11 +16,14 @@ export function AnalysisCard({
   category,
   seriousness,
   ai_confidence,
+  case_score,
   onContinue,
 }: AnalysisCardProps) {
   const style = severityStyle(seriousness);
   const label = CATEGORY_LABELS[category] ?? category.replaceAll('_', ' ');
-  const confidencePct = Math.round(Math.min(1, Math.max(0, ai_confidence)) * 100);
+  const confidencePct = ai_confidence > 1
+    ? Math.round(Math.max(0, Math.min(100, ai_confidence)))
+    : Math.round(Math.max(0, Math.min(1, ai_confidence)) * 100);
 
   return (
     <div
@@ -41,6 +46,9 @@ export function AnalysisCard({
           <div className="analysis-meta">
             <span className="analysis-tone">{style.label}</span>
             <span className="analysis-conf">{confidencePct}% conf.</span>
+            {case_score != null ? (
+              <span className="analysis-conf">Case {formatUnitScore(case_score)}</span>
+            ) : null}
           </div>
         </div>
         <button type="button" className="btn btn-primary" onClick={onContinue}>

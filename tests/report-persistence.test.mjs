@@ -12,6 +12,7 @@ const migrations = await Promise.all([
   '202609190004_mock_government_submission.sql',
   '202609190005_mock_agency.sql',
   '202609190006_reports_realtime.sql',
+  '202609190007_incident_scoring.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 // Run production tagged SQL against an isolated PostgreSQL engine, including its real transactions.
@@ -59,6 +60,7 @@ test('submission reads trusted image and scores, records corrections, and saves 
   assert.equal(report.image_hash, 'saved-hash');
   assert.equal(report.seriousness, 6);
   assert.equal(report.ai_confidence, 0.81);
+  assert.ok(Math.abs(report.case_score - 0.543) < 1e-12);
   assert.equal(report.category, 'other_hazard');
   assert.equal(report.short_label, 'Other hazard');
   assert.equal(report.user_corrected, 1);
@@ -101,10 +103,41 @@ test('nearby reports with the same normalized type become one queryable super-re
   const incident = await DatabaseService.getIncident(first.report.incident_id);
   assert.equal(incident.evidence_count, 2);
   assert.equal(incident.highest_seriousness, 8);
+  assert.equal(incident.report_count, 2);
+  assert.equal(incident.government_report_status, 'ready_to_submit');
+  assert.ok(incident.incident_score >= 0.75);
   assert.equal(incident.average_ai_confidence, 0.855);
   assert.deepEqual(incident.tags, ['pothole', 'roadway', 'sidewalk']);
   const common = await DatabaseService.listIncidents({ incidentType: 'pothole', commonOnly: true });
   assert.deepEqual(common.map(item => item.id), [incident.id]);
+});
+
+test('two independent high-danger reports cross the government threshold without summing scores', async t => {
+  const { db, session } = await setup(t);
+  await db.exec("UPDATE image_analyses SET seriousness=6, ai_confidence=95");
+  const first = await DatabaseService.submitReport(session, validateReportInput({
+    ...input, latitude: 39.2904, longitude: -76.6122,
+  }));
+  const firstIncident = await DatabaseService.getIncident(first.report.incident_id);
+  assert.equal(firstIncident.government_report_status, 'not_ready');
+  assert.ok(firstIncident.incident_score < 0.75);
+
+  const secondSession = await DatabaseService.createSession();
+  const secondAnalysis = '33333333-3333-4333-8333-333333333333';
+  await db.query(`INSERT INTO image_analyses (id,session_id,image_path,image_hash,category,incident_type,
+    seriousness,ai_confidence,context_summary,context_tags,tags,model,prompt_version)
+    VALUES ($1,$2,'https://storage.example/photo-3.jpg','saved-hash-3','roads_and_sidewalks','pothole',
+    6,95,'A traffic hazard is visible.',array['roadway'],array['pothole','roadway'],
+    'gemini-test','2')`, [secondAnalysis, secondSession]);
+  const second = await DatabaseService.submitReport(secondSession, validateReportInput({
+    ...input, analysis_id: secondAnalysis, latitude: 39.2908, longitude: -76.6122,
+  }));
+
+  const incident = await DatabaseService.getIncident(second.report.incident_id);
+  assert.equal(incident.id, first.report.incident_id);
+  assert.equal(incident.report_count, 2);
+  assert.ok(Math.abs(incident.incident_score - 0.827775) < 1e-6);
+  assert.equal(incident.government_report_status, 'ready_to_submit');
 });
 
 test('report insert failure rolls back incident and link, then retry succeeds', async t => {

@@ -18,15 +18,17 @@ will act on a report.
 4. Review the saved assessment and correct the category if needed. Confirm GPS
    location or enter an address or landmark; add optional details.
 5. Submit. The server loads the session-owned assessment and saves the report
-   atomically. Nearby same-type reports within 150 meters and 72 hours join one
-   incident. The receipt appears only after persistence succeeds.
+   atomically. Same-type reports whose GPS accuracy circles overlap (2× the
+   reported accuracy, 25–250m) join one incident, including through a chain of
+   overlaps, within 72 hours. The receipt appears only after persistence succeeds.
 
 A separate local worker (`npm run worker`) listens for new rows on
-`public.reports`. When an incident has two or more reports, it files that
+`public.reports`. When an incident's combined score reaches 0.75, it files that
 cluster to a **mock** government website with Playwright and stores the
-confirmation on the incident. Roads, sidewalks, and streetlights go to the
-Riverton DOT mock; other non-emergency issues go to the City 311 mock. It does
-not call Baltimore 311.
+confirmation on the incident. Dangerous issues can file from one strong report;
+minor issues need several independent reporters. Roads, sidewalks, and
+streetlights go to the Riverton DOT mock; other non-emergency issues go to the
+City 311 mock. It does not call Baltimore 311.
 
 If Gemini is unavailable, the photo and an explicitly unavailable assessment are
 saved so that manual reporting remains usable. An unavailable assessment is
@@ -120,8 +122,8 @@ npm run worker
 
 The worker reads the same `.env.local` as the app. On startup it checks existing
 incidents once, then waits for new `public.reports` inserts instead of polling
-every 10 seconds. A visible browser opens only for clustered, non-emergency
-incidents that have not already been filed. Road and streetlight clusters open
+every 10 seconds. A visible browser opens only for non-emergency incidents whose
+incident score is at least 0.75 and that have not already been filed. Road and streetlight clusters open
 the transportation mock; litter and other civic issues open the general 311
 mock. Playwright will not run on Vercel. Apply
 `202609190006_reports_realtime.sql` so Supabase Realtime publishes `reports`.
@@ -184,6 +186,7 @@ app/api/submit/route.ts           Authoritative report submission
 app/api/health/route.ts           Configuration and database health
 worker/src/index.ts              Listen for new reports and file the matching mock form
 worker/src/agency-route.ts       Choose Riverton DOT vs City 311 from category
+lib/incident-scoring.ts          Case score, incident score, and filing threshold
 lib/gemini.ts                    Server-side Gemini request
 lib/hazard-analysis.mjs          Prompt, schema, and validation
 lib/analysis-store.ts            Saved analysis persistence
@@ -210,8 +213,9 @@ definitions, trust boundaries, and operational limits.
 - **Camera or location is denied:** use file upload and enter the location
   manually. Confirm the phone is using HTTPS before testing permissions again.
 - **Worker never opens a browser:** apply
-  `202609190004_mock_government_submission.sql`, confirm two nearby same-type
-  reports clustered (`evidence_count >= 2`), apply
+  `202609190004_mock_government_submission.sql` through
+  `202609190007_incident_scoring.sql`, confirm the incident score is at least
+  0.75 (`government_report_status` is `ready_to_submit`), apply
   `202609190006_reports_realtime.sql`, and run `npx playwright install chromium`.
   Emergencies and already-filed incidents are skipped on purpose.
 

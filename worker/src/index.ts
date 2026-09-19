@@ -32,7 +32,11 @@ async function submitIncident(
 ) {
   const reason = skipReason(incident);
   if (reason) {
-    if (incident.evidence_count >= 2 || incident.mock_status === 'failed') {
+    if (
+      (incident.incident_score != null && incident.incident_score >= 0.75)
+      || incident.government_report_status === 'ready_to_submit'
+      || incident.mock_status === 'failed'
+    ) {
       console.log(`Incident ${incident.id}: ${reason}. Skipping submission.`);
     }
     return;

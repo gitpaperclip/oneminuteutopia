@@ -4,6 +4,7 @@ import { DatabaseService, type Incident } from '@/lib/db';
 import { CONTEXT_TAGS, INCIDENT_TYPES } from '@/lib/incident-taxonomy.mjs';
 import { HttpError } from '@/lib/hazard-analysis.mjs';
 import { displayMockReference, parseMockReference } from '@/lib/mock-agency';
+import { GOVERNMENT_REPORT_THRESHOLD } from '@/lib/incident-scoring';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,6 +44,11 @@ function publicIncident(incident: Incident) {
     mock_error: incident.mock_error,
     mock_agency: incident.mock_agency
       ?? parseMockReference(incident.mock_reference_id).agency,
+    incident_score: incident.incident_score ?? 0,
+    report_count: incident.report_count ?? incident.evidence_count,
+    government_report_status: incident.government_report_status ?? 'not_ready',
+    ready_for_government: (incident.incident_score ?? 0) >= GOVERNMENT_REPORT_THRESHOLD
+      || incident.government_report_status === 'ready_to_submit',
   };
 }
 
@@ -74,6 +80,7 @@ export async function GET(req: NextRequest) {
             location_address: report.location_address,
             ai_confidence: report.ai_confidence,
             seriousness: report.seriousness,
+            case_score: report.case_score,
             analysis_status: report.analysis_status,
             tags: report.tags,
             baltimore_service_candidates: report.baltimore_service_candidates,

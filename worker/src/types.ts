@@ -1,3 +1,5 @@
+import type { GovernmentReportStatus } from '../../lib/incident-scoring.ts';
+
 export type MockStatus = 'pending' | 'submitted' | 'failed';
 export type MockAgency = 'transportation' | 'general';
 
@@ -17,6 +19,9 @@ export interface WorkerIncident {
   mock_status: MockStatus | null;
   mock_error: string | null;
   mock_agency?: MockAgency | null;
+  incident_score?: number | null;
+  report_count?: number | null;
+  government_report_status?: GovernmentReportStatus | null;
 }
 
 export interface WorkerReport {
