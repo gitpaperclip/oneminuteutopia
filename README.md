@@ -51,7 +51,7 @@ One Minute Utopia is a Next.js application that enables community members to qui
 4. Set **Public bucket**: ✅ Enabled (allows public read access for report receipts)
 5. Click **Create bucket**
 
-> **Note**: The storage bucket is automatically created by the app on first upload if it doesn't exist. This step is optional but recommended for validation.
+> **Note**: The storage bucket `report-photos` must exist before uploading photos. Create it manually in the Supabase dashboard as described above. The app will automatically verify and use this bucket.
 
 #### Get Your Supabase Credentials
 
@@ -64,10 +64,11 @@ You'll need these values for Vercel environment variables:
    - Copy **anon/public** key (for `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
    - Copy **service_role** key (for `SUPABASE_SERVICE_ROLE_KEY`) ⚠️ Keep this secret!
 
-3. **Database Password**: Go to **Project Settings** → **Database**
+3. **Database Connection String**: Go to **Project Settings** → **Database**
    - Under **Connection string**, select **URI**
-   - Copy the full connection string (it includes your password)
-   - Format: `postgres://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres`
+   - Copy the full connection string
+   - Format: `postgresql://postgres:[YOUR-PASSWORD]@db.xxxxx.supabase.co:5432/postgres`
+   - **Important**: Add `?sslmode=require` at the end
 
 ### 2. Deploy to Vercel
 
@@ -98,7 +99,7 @@ Go to your Vercel project → **Settings** → **Environment Variables** and add
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://obvqhywolewuipftfgd.supabase.co` | Project Settings → API → Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGci...` (your anon key) | Project Settings → API → anon/public key |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGci...` (your service key) | Project Settings → API → service_role key ⚠️ |
-| `DATABASE_URL` | `postgres://postgres:[PASSWORD]@db.obvqhywolewuipftfgd.supabase.co:5432/postgres?sslmode=require` | Project Settings → Database → Connection string (add `?sslmode=require`) |
+| `DATABASE_URL` | `postgresql://postgres:[PASSWORD]@db.obvqhywolewuipftfgd.supabase.co:5432/postgres?sslmode=require` | Project Settings → Database → Connection string → URI (add `?sslmode=require`) |
 
 ⚠️ **Important**: The `DATABASE_URL` must include `?sslmode=require` at the end for Supabase Postgres.
 
@@ -140,7 +141,14 @@ Or use the Vercel dashboard: **Deployments** → **Redeploy**.
 
 The database tables are created automatically on first use. No manual migration needed!
 
-When the first API request hits the database, the `DatabaseService.ensureTablesExist()` method will create all required tables and indexes.
+When the first API request hits the database, the `DatabaseService.ensureTablesExist()` method will automatically create:
+- `sessions` - User and organizer sessions
+- `reports` - Individual incident reports with photos
+- `incidents` - Aggregated issues
+- `status_events` - Status change audit log
+- All necessary indexes for performance
+
+The Table Editor in Supabase will be empty until the first request is made to the app.
 
 ### 7. Verify Deployment
 
@@ -203,11 +211,11 @@ cp .env.example .env.local
 Edit `.env.local` with your Supabase credentials:
 
 ```bash
-# Supabase (get from dashboard)
+# Supabase (get from dashboard - Project Settings → API and Database)
 NEXT_PUBLIC_SUPABASE_URL=https://obvqhywolewuipftfgd.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-DATABASE_URL=postgres://postgres:[PASSWORD]@db.obvqhywolewuipftfgd.supabase.co:5432/postgres?sslmode=require
+DATABASE_URL=postgresql://postgres:[PASSWORD]@db.obvqhywolewuipftfgd.supabase.co:5432/postgres?sslmode=require
 
 # Google Gemini
 GEMINI_API_KEY=your_gemini_api_key_here

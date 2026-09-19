@@ -32,7 +32,8 @@ export class StorageService {
   }
 
   /**
-   * Ensure the storage bucket exists. Creates it if necessary with public access.
+   * Verify the storage bucket exists.
+   * The bucket 'report-photos' must be created manually in Supabase dashboard before use.
    */
   private static async ensureBucketExists(): Promise<void> {
     const supabase = this.getSupabaseClient();
@@ -41,23 +42,16 @@ export class StorageService {
 
     if (listError) {
       console.error('Error listing buckets:', listError);
-      throw listError;
+      throw new Error(`Failed to list storage buckets: ${listError.message}`);
     }
 
     const bucketExists = buckets?.some((bucket) => bucket.name === this.bucketName);
 
     if (!bucketExists) {
-      const { error: createError } = await supabase.storage.createBucket(this.bucketName, {
-        public: true,
-        fileSizeLimit: 10485760, // 10MB
-      });
-
-      if (createError) {
-        console.error('Error creating bucket:', createError);
-        throw createError;
-      }
-
-      console.log(`Created Supabase Storage bucket: ${this.bucketName}`);
+      throw new Error(
+        `Storage bucket '${this.bucketName}' does not exist. Please create it in Supabase dashboard: ` +
+        `Storage → New bucket → Name: ${this.bucketName} → Public: ✅ Enabled`
+      );
     }
   }
 
