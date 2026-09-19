@@ -16,10 +16,13 @@ export const MAP_COPY = {
   superReportsOnly: 'Super-reports only',
   allCategories: 'All categories',
   seeThisToo: 'I see this too',
+  unseeThis: 'Unsee',
   confirmed: 'You confirmed this issue',
   removeConfirmation: 'Remove confirmation',
   confirmationHint:
     'A community confirmation is not a photo report, a vote, or a city filing.',
+  confirmationsUnavailable:
+    'I-see-this-too is not available on this database yet. Apply supabase/migrations/202609190005_incident_confirmations.sql.',
   loading: 'Loading incidents…',
 } as const;
 

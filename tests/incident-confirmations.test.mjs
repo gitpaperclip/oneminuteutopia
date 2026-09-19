@@ -104,3 +104,26 @@ test('unknown incident confirmation is not found', async t => {
     error => error.status === 404,
   );
 });
+
+test('confirming without the confirmations migration is a clear schema error', async t => {
+  const db = new PGlite();
+  t.after(() => db.close());
+  await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
+  for (const migration of migrations.slice(0, 5)) await db.exec(migration);
+  t.mock.method(DatabaseService, 'getConnection', () => connect(db));
+  const reporter = await DatabaseService.createSession();
+  const viewer = await DatabaseService.createSession();
+  await insertAnalysis(db, { id: '22222222-2222-4222-8222-222222222222', session: reporter });
+  const { report } = await DatabaseService.submitReport(reporter, validateReportInput({
+    analysis_id: '22222222-2222-4222-8222-222222222222',
+    category: 'roads_and_sidewalks',
+    location_source: 'gps',
+    latitude: 39.2904,
+    longitude: -76.6122,
+    location_accuracy: 8,
+  }));
+  await assert.rejects(
+    () => DatabaseService.confirmIncident(report.incident_id, viewer),
+    error => error.status === 503 && /incident_confirmations/.test(error.message),
+  );
+});

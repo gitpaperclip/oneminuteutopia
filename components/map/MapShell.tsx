@@ -17,7 +17,7 @@ import {
 } from '@/lib/map-copy';
 import { formatSeverity } from '@/lib/severity';
 import { formatTimestamp } from '@/lib/utils';
-import { MapFilters } from '@/components/map/MapFilters';
+import { MapFilterPanel, MapFilterToggle } from '@/components/map/MapFilters';
 import {
   fetchConfirmation,
   fetchMapIncidents,
@@ -139,23 +139,33 @@ export function MapShell() {
       </div>
 
       <header className="map-chrome">
-        <div className="map-chrome-bar">
-          <img src="/logo-mark.png?v=3" alt="" className="map-chrome-logo" width={32} height={32} />
-          <p className="map-chrome-status" aria-live="polite">
-            {statusLabel}
-            {unmapped > 0 ? ` · ${unmapped} without GPS` : ''}
-          </p>
-          <div className="map-chrome-actions">
-            <MapFilters
-              filters={urlFilters}
-              expanded={filtersOpen}
-              onToggle={() => setFiltersOpen((open) => !open)}
-              onChange={applyFilters}
-            />
-            <Link href="/" className="map-chrome-report">
-              {MAP_COPY.report}
-            </Link>
+        {filtersOpen ? (
+          <button
+            type="button"
+            className="map-filter-backdrop"
+            aria-label="Close filters"
+            onClick={() => setFiltersOpen(false)}
+          />
+        ) : null}
+        <div className="map-chrome-card">
+          <div className="map-chrome-bar">
+            <img src="/logo-mark.png?v=3" alt="" className="map-chrome-logo" width={32} height={32} />
+            <p className="map-chrome-status" aria-live="polite">
+              {statusLabel}
+              {unmapped > 0 ? ` · ${unmapped} without GPS` : ''}
+            </p>
+            <div className="map-chrome-actions">
+              <MapFilterToggle
+                filters={urlFilters}
+                expanded={filtersOpen}
+                onToggle={() => setFiltersOpen((open) => !open)}
+              />
+              <Link href="/" className="map-chrome-report">
+                {MAP_COPY.report}
+              </Link>
+            </div>
           </div>
+          {filtersOpen ? <MapFilterPanel filters={urlFilters} onChange={applyFilters} /> : null}
         </div>
       </header>
 
@@ -229,7 +239,7 @@ function IncidentSheet({
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        setConfirmError(null);
+        setConfirmError(cause instanceof Error ? cause.message : MAP_COPY.confirmationsUnavailable);
       });
     return () => controller.abort();
   }, [incident.id, onCount]);
@@ -286,22 +296,13 @@ function IncidentSheet({
         <div className="map-confirm">
           <button
             type="button"
-            className="btn btn-primary btn-block"
+            className={`btn btn-block${confirmed ? ' map-confirm-unsee' : ' btn-primary'}`}
+            aria-pressed={confirmed}
             disabled={busy}
             onClick={() => void toggle()}
           >
-            {confirmed ? MAP_COPY.confirmed : MAP_COPY.seeThisToo}
+            {confirmed ? MAP_COPY.unseeThis : MAP_COPY.seeThisToo}
           </button>
-          {confirmed ? (
-            <button
-              type="button"
-              className="text-btn map-confirm-undo"
-              disabled={busy}
-              onClick={() => void toggle()}
-            >
-              {MAP_COPY.removeConfirmation}
-            </button>
-          ) : null}
           <p className="map-confirm-total">{confirmationTotalLabel(incident.confirmation_count)}</p>
           <p className="map-confirm-hint">{MAP_COPY.confirmationHint}</p>
           {confirmError ? (

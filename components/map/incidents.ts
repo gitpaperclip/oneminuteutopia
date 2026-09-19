@@ -104,6 +104,12 @@ function isMapIncidentsResponse(value: unknown): value is MapIncidentsResponse {
   return !!value && typeof value === 'object' && Array.isArray((value as MapIncidentsResponse).incidents);
 }
 
+function confirmationError(data: unknown, fallback: string): string {
+  return data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+    ? data.error
+    : fallback;
+}
+
 export async function fetchConfirmation(
   incidentId: string,
   signal?: AbortSignal,
@@ -111,16 +117,17 @@ export async function fetchConfirmation(
   const response = await fetch(`/api/incidents/${incidentId}/confirmation`, {
     signal,
     cache: 'no-store',
+    credentials: 'same-origin',
   });
   const data: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(confirmationError(data, 'Could not load confirmations.'));
   if (
-    !response.ok ||
     !data ||
     typeof data !== 'object' ||
     !('confirmation_count' in data) ||
     !('viewer_confirmed' in data)
   ) {
-    throw new Error('Could not load confirmations.');
+    throw new Error(confirmationError(data, 'Could not load confirmations.'));
   }
   return data as { confirmation_count: number; viewer_confirmed: boolean };
 }
@@ -132,12 +139,10 @@ export async function setConfirmation(
   const response = await fetch(`/api/incidents/${incidentId}/confirmation`, {
     method: confirm ? 'POST' : 'DELETE',
     cache: 'no-store',
+    credentials: 'same-origin',
   });
   const data: unknown = await response.json().catch(() => null);
-  const errorMessage =
-    data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
-      ? data.error
-      : 'Could not update confirmation.';
+  const errorMessage = confirmationError(data, 'Could not update confirmation.');
   if (!response.ok) throw new Error(errorMessage);
   if (
     !data ||
@@ -145,7 +150,7 @@ export async function setConfirmation(
     !('confirmation_count' in data) ||
     !('viewer_confirmed' in data)
   ) {
-    throw new Error('Could not update confirmation.');
+    throw new Error(errorMessage);
   }
   return data as { confirmation_count: number; viewer_confirmed: boolean };
 }
