@@ -1,6 +1,5 @@
 import crypto from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
-import path from 'path';
+import { put } from '@vercel/blob';
 import { nanoid } from 'nanoid';
 
 export class StorageService {
@@ -13,13 +12,15 @@ export class StorageService {
                 mimeType === 'image/webp' ? 'webp' : 'jpg';
     
     const filename = `${nanoid()}-${hash.substring(0, 8)}.${ext}`;
-    const uploadPath = path.join(process.cwd(), 'public', 'uploads', filename);
     
-    await mkdir(path.dirname(uploadPath), { recursive: true });
-    await writeFile(uploadPath, buffer);
+    // Upload to Vercel Blob
+    const blob = await put(filename, buffer, {
+      access: 'public',
+      contentType: mimeType,
+    });
     
     return {
-      path: `/uploads/${filename}`,
+      path: blob.url,
       hash,
     };
   }
