@@ -53,3 +53,7 @@ test('capture (i) control wins over btn-ghost padding for a true 44 center', () 
   assert.match(cssSource, /\.btn-ghost\.capture-info\s*\{[^}]*width:\s*44px;/s);
   assert.match(cssSource, /\.btn-ghost\.capture-info\s*\{[^}]*height:\s*44px;/s);
 });
+
+test('how-to steps keep visible decimal numbers against Tailwind list reset', () => {
+  assert.match(cssSource, /\.info-steps\s*\{[^}]*list-style:\s*decimal;/s);
+});
