@@ -255,6 +255,8 @@ general reports: https://github.com/A1x-Z/mock_government_page_without_api
 
 public transportation specific: https://github.com/A1x-Z/mock_second_gov_site_transportation_specific
 
+**DISCLAIMER: Both repositories were created DURING the hackathon and are only for demo workflow purposes, and do not affect the functionality of our app.**
+
 
 ## License
 
