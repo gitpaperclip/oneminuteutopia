@@ -47,6 +47,14 @@ test('how-to keeps the 911 safety line and drops 311 / map lectures', () => {
   assert.doesNotMatch(HOW_TO_COPY.steps.join(' '), /311|city portal|prepare/i);
 });
 
+test('info panel and its copy are centered in the viewport', () => {
+  assert.match(cssSource, /\.info-overlay\s*\{[^}]*align-items:\s*center;/s);
+  assert.match(cssSource, /\.info-card\s*\{[^}]*text-align:\s*center;/s);
+  assert.match(cssSource, /\.info-card-head\s*\{[^}]*text-align:\s*center;/s);
+  assert.match(cssSource, /\.info-steps\s*\{[^}]*text-align:\s*center;/s);
+  assert.match(cssSource, /\.info-steps\s*\{[^}]*counter-reset:\s*info-step;/s);
+});
+
 test('capture (i) control wins over btn-ghost padding for a true 44 center', () => {
   assert.match(cssSource, /\.btn-ghost\.capture-info\s*\{[^}]*padding:\s*0;/s);
   assert.match(cssSource, /\.btn-ghost\.capture-info\s*\{[^}]*place-items:\s*center;/s);

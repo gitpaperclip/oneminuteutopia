@@ -436,7 +436,7 @@ export default function HomePage() {
           incident_id: data.incident_id,
         });
       }
-      router.push(`/receipt/${encodeURIComponent(data.report_id)}?cat=${encodeURIComponent(category)}`);
+      router.push(`/receipt/${encodeURIComponent(data.report_id)}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save report.');
       setSubmitting(false);
@@ -705,13 +705,13 @@ export default function HomePage() {
         >
           <div className="leave-card">
             <h2 id="leave-title" className="leave-title">
-              Leave this report?
+              Start over?
             </h2>
             <p className="leave-copy">
-              Clear the cached photo and delete this in-progress report, or return to the report.
+              Start over with a new photo, or return to finish this report.
             </p>
             <button type="button" className="btn btn-danger btn-block" onClick={resetToCapture}>
-              Clear photo and delete
+              Start over
             </button>
             <button type="button" className="btn btn-primary btn-block" onClick={stayWithReport}>
               Return to the report

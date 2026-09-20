@@ -479,9 +479,9 @@ body {
   inset: 0;
   z-index: 30;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
   background: rgba(15, 23, 42, .48);
   animation: info-fade .22s ease;
 }
@@ -498,12 +498,12 @@ body {
   gap: 10px;
   box-shadow: 0 16px 40px rgba(0,0,0,.28);
   animation: info-rise .28s cubic-bezier(.22, 1, .36, 1);
+  text-align: center;
 }
 .info-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
+  position: relative;
+  padding: 0 36px;
+  text-align: center;
 }
 .info-card-head .analysis-kicker {
   margin-bottom: 4px;
@@ -515,7 +515,10 @@ body {
   place-items: center;
   width: 44px;
   height: 44px;
-  margin: -8px -8px 0 0;
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  margin: 0;
   border: none;
   background: transparent;
   color: var(--muted);
@@ -540,7 +543,10 @@ body {
 }
 .info-steps {
   margin: 0;
-  padding: 0 0 0 1.15em;
+  padding: 0;
+  list-style: none;
+  counter-reset: info-step;
+  text-align: center;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -548,6 +554,12 @@ body {
   line-height: 1.4;
   font-weight: 500;
   color: var(--fg);
+}
+.info-steps li { counter-increment: info-step; }
+.info-steps li::before {
+  content: counter(info-step) '. ';
+  color: var(--blue);
+  font-weight: 750;
 }
 .info-note {
   margin: 0;
@@ -606,28 +618,72 @@ body {
   min-height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
-  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px));
+  padding: calc(18px + env(safe-area-inset-top, 0px)) 18px calc(28px + env(safe-area-inset-bottom, 0px));
   background: var(--bg);
   color: var(--fg);
 }
-.receipt-header { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
-.receipt-header img { width: 36px; height: 36px; object-fit: contain; }
-.receipt-header h1 { margin: 0; font-size: 18px; font-weight: 750; color: var(--charcoal); letter-spacing: -.02em; }
-.receipt-id {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
-  background: #f3f4f6; border-radius: 10px; padding: 10px 12px; word-break: break-all; margin: 0 0 8px;
+.receipt-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
 }
-.receipt-cat { margin: 0 0 16px; font-size: 14px; color: var(--muted); }
-.receipt-status {
-  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 0 0 20px;
+.receipt-header img { width: 34px; height: 34px; object-fit: contain; }
+.receipt-header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 780;
+  color: var(--charcoal);
+  letter-spacing: -.025em;
 }
-.receipt-status h2 { margin: 0 0 8px; font-size: 15px; font-weight: 750; color: var(--charcoal); }
-.receipt-status p { margin: 0 0 8px; font-size: 14px; color: var(--fg); }
-.receipt-status p:last-child { margin-bottom: 0; }
-.receipt-status .receipt-id { margin-top: 8px; }
+.receipt-reference {
+  padding: 11px 13px;
+  background: #f3f4f6;
+  border-radius: 12px;
+}
+.receipt-reference span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+.receipt-reference code {
+  display: block;
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.receipt-category {
+  margin: 9px 2px 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+}
 .receipt-911 { margin: 0 0 20px; }
-.receipt-section { margin: 0 0 20px; }
-.receipt-section h2 { margin: 0 0 8px; font-size: 15px; font-weight: 750; color: var(--charcoal); }
+.receipt-cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 20px;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+.receipt-cluster strong { font-size: 14px; }
+.receipt-cluster span { font-size: 12px; }
+.receipt-section { margin: 0 0 22px; }
+.receipt-section h2 {
+  margin: 0 0 9px;
+  color: var(--charcoal);
+  font-size: 15px;
+  font-weight: 750;
+}
 .packet-card {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -698,33 +754,68 @@ body {
   line-height: 1.45;
   color: var(--fg);
 }
-.handoff-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
-.handoff-card {
+.handoff-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 12px 14px;
+  border-radius: 14px;
   background: #fff;
 }
-.handoff-title { margin: 0 0 4px; font-size: 15px; font-weight: 700; color: var(--charcoal); }
-.handoff-note { display: block; margin: 0 0 8px; font-size: 12px; color: var(--muted); font-weight: 500; line-height: 1.35; }
-.handoff-phones { margin: 0 0 8px; display: flex; flex-direction: column; gap: 6px; }
+.handoff-list li + li { border-top: 1px solid var(--line); }
+.handoff-card { padding: 14px; }
+.handoff-title {
+  margin: 0 0 10px;
+  color: var(--charcoal);
+  font-size: 15px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+.handoff-phones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 0 9px;
+}
+.handoff-phones:last-child { margin-bottom: 0; }
 .handoff-phones a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-height: 38px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #f3f4f6;
   color: var(--blue);
-  font-weight: 700;
-  text-decoration: none;
-  font-size: 14px;
-}
-.handoff-phones a span { color: var(--muted); font-weight: 500; font-size: 12px; }
-.handoff-links { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; }
-.handoff-portal {
-  display: inline-block;
   font-size: 13px;
-  font-weight: 700;
-  color: var(--blue);
+  font-weight: 750;
   text-decoration: none;
 }
-.receipt-note { font-size: 13px; color: var(--muted); margin: 0 0 10px; line-height: 1.4; }
-.receipt-actions { margin-top: 24px; }
+.handoff-phones small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 550;
+}
+.handoff-links { display: flex; flex-wrap: wrap; gap: 7px; }
+.handoff-portal {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.receipt-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+}
+.btn-secondary { background: var(--blue-soft); color: var(--blue); }
 
 @media (prefers-reduced-motion: reduce) {
   .shutter-cluster,
