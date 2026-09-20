@@ -1,6 +1,74 @@
 .incident-map {
   height: 100%;
+  position: relative;
   width: 100%;
+}
+
+.map-location-control {
+  align-items: flex-start;
+  bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  left: 12px;
+  position: absolute;
+  z-index: 800;
+}
+
+.map-location-button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+  color: #2563eb;
+  cursor: pointer;
+  display: inline-flex;
+  height: 44px;
+  justify-content: center;
+  padding: 0;
+  width: 44px;
+}
+
+.map-location-button:hover {
+  background: #ffffff;
+}
+
+.map-location-button:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+
+.map-location-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.map-location-icon.is-busy {
+  animation: map-location-spin 1s linear infinite;
+}
+
+.map-location-message {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
+  max-width: min(220px, calc(100vw - 24px));
+  padding: 8px 10px;
+}
+
+@keyframes map-location-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-location-icon.is-busy {
+    animation: none;
+  }
 }
 
 .incident-map .leaflet-container {
@@ -77,6 +145,46 @@
 
 .incident-pin-pulse .incident-pin-dot {
   animation: incident-pin-pulse 1.8s ease-out infinite;
+}
+
+.user-location-pin {
+  background: none !important;
+  border: none !important;
+  overflow: visible !important;
+}
+
+.user-location-pin-shape {
+  display: block;
+  filter: drop-shadow(0 2px 3px rgba(15, 23, 42, 0.38));
+  height: 44px;
+  overflow: visible;
+  width: 36px;
+}
+
+.user-location-pin-shape path {
+  fill: #2563eb;
+  stroke: #ffffff;
+  stroke-linejoin: round;
+  stroke-width: 3px;
+}
+
+.user-location-pin-shape circle {
+  fill: #ffffff;
+}
+
+.user-location-pin-label {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
+  color: #ffffff;
+  font: 700 10px/18px ui-sans-serif, system-ui, sans-serif;
+  left: 50%;
+  padding: 0 6px;
+  position: absolute;
+  top: -17px;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 @keyframes incident-pin-pulse {

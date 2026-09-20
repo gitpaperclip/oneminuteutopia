@@ -7,6 +7,11 @@ Architecture:
 The basemap is public OSM raster tiles. No `NEXT_PUBLIC_MAP_STYLE_URL` or
 MapLibre style is required. Private tokens stay off `NEXT_PUBLIC_*`.
 
+The map requests the browser's current location and displays it as a blue pin
+labeled “You,” with an accuracy circle. A locate control recenters the view or retries after a
+permission or positioning failure. This position stays in browser memory and is
+not sent to `GET /api/incidents` or persisted as a report.
+
 ## Truncation
 
 `GET /api/incidents` still caps at 100 rows. The handler fetches `limit + 1`
