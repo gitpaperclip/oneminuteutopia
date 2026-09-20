@@ -2,19 +2,16 @@
 
 import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import { formatSeverity, severityStyle } from '@/lib/severity';
-import { formatUnitScore } from '@/lib/incident-scoring';
 
 export interface AnalysisCardProps {
   category: string;
   seriousness: number | null;
-  case_score?: number | null;
   onContinue: () => void;
 }
 
 export function AnalysisCard({
   category,
   seriousness,
-  case_score,
   onContinue,
 }: AnalysisCardProps) {
   const style = severityStyle(seriousness);
@@ -36,9 +33,6 @@ export function AnalysisCard({
         </div>
         <div className="analysis-meta">
           <span className="analysis-tone">{style.label}</span>
-          {case_score != null ? (
-            <span className="analysis-conf">Case {formatUnitScore(case_score)}</span>
-          ) : null}
         </div>
       </div>
       <button type="button" className="btn btn-primary btn-block" onClick={onContinue}>

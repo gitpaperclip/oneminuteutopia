@@ -184,10 +184,10 @@ async function refreshIncidentAggregates(tx: SqlTx, incidentId: string, now: num
   const averageConfidence = confidences.length
     ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length
     : null;
-  const clusterRadius = Math.max(
+  const clusterRadius = Math.round(Math.max(
     clusterRadiusMeters(null),
     ...reports.map(report => clusterRadiusMeters(report.location_accuracy)),
-  );
+  ));
   const routingDisposition = reports.some(report => report.routing_disposition === 'emergency')
     ? 'emergency'
     : (reports.at(-1)?.routing_disposition ?? incident.routing_disposition);
@@ -371,7 +371,7 @@ export class DatabaseService {
           VALUES (${incidentId}, ${input.category}, ${incidentType}, ${label}, ${input.user_description}, ${tags},
           ${serviceCandidates}, ${routingDisposition},
           ${input.latitude}, ${input.longitude}, ${input.location_address}, 'reported', 'normal', 0,
-          1, ${analysis.seriousness}, ${confidence}, ${confidence === null ? 0 : 1}, ${clusterRadiusMeters(input.location_accuracy)},
+          1, ${analysis.seriousness}, ${confidence}, ${confidence === null ? 0 : 1}, ${Math.round(clusterRadiusMeters(input.location_accuracy))},
           ${now}, ${now}, ${now})`;
       }
       const [report] = await tx<Report[]>`INSERT INTO public.reports (
