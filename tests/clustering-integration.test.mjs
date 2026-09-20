@@ -54,7 +54,7 @@ test('two nearby same-type reports within 72h cluster into one incident with two
     user_description: 'Large pothole',
     latitude: 39.29,
     longitude: -76.61,
-    location_accuracy: 10,
+    location_accuracy: 15.11206436258455,
     location_source: 'gps',
     location_address: 'Main St'
   };
@@ -90,6 +90,7 @@ test('two nearby same-type reports within 72h cluster into one incident with two
   const incidents = await db.query('SELECT * FROM incidents WHERE id = $1', [incident1Id]);
   assert.equal(incidents.rows.length, 1, 'Should have exactly one incident');
   assert.equal(incidents.rows[0].evidence_count, 2, 'Incident should have evidence_count of 2');
+  assert.equal(incidents.rows[0].cluster_radius_m, 30, 'Fractional GPS accuracy stores a rounded radius');
   assert.equal(incidents.rows[0].report_count, 1, 'Same session should count once toward incident_score');
   assert.equal(incidents.rows[0].government_report_status, 'ready_to_submit');
   assert.equal(incidents.rows[0].mock_status, 'pending');
