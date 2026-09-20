@@ -46,8 +46,15 @@ while retaining the image context for auditability.
 
 Location is only available after review, so grouping runs in `POST /api/submit`.
 The backend searches open incidents with the same `incident_type` that were
-updated in the last 72 hours and are within 150 meters. The nearest match receives
-the new report. Otherwise the backend creates a new incident.
+updated in the last 72 hours. Each report is a circle whose center is its
+latitude/longitude and whose radius is **2× GPS accuracy**, clamped between 25m
+and 250m. If the new report's circle overlaps any existing report's circle,
+they are the same incident. Overlap is transitive: if A overlaps B and B
+overlaps D, A, B, and D become one incident (older incident kept, others marked
+`merged`). Reports without coordinates never cluster.
+
+1× accuracy is too strict for typical phone GPS jitter. 3× lets two poor-GPS
+circles swallow a city block. 2× is the default.
 
 An incident is a super-report when `evidence_count >= 2`. Its aggregate record
 contains:
@@ -91,24 +98,36 @@ catalog endpoint is not publicly readable.
 ## Database setup
 
 Apply `supabase/migrations/202609190002_incident_context_and_clustering.sql`,
-`supabase/migrations/202609190003_baltimore_311_routing.sql`, and
-`supabase/migrations/202609190004_mock_government_submission.sql` after the two
+`supabase/migrations/202609190003_baltimore_311_routing.sql`,
+`supabase/migrations/202609190004_mock_government_submission.sql`,
+`supabase/migrations/202609190005_incident_confirmations.sql`,
+`supabase/migrations/202609190006_mock_agency.sql`,
+`supabase/migrations/202609190007_reports_realtime.sql`, and
+`supabase/migrations/202609190008_incident_scoring.sql` after the two
 existing reporting migrations. They backfill existing records with
 broad fallback incident types and create indexes for subtype, tag, and recent
 location matching.
 
-The clustering constants are exported from `lib/db.ts`. The current radius and
-time window are hackathon defaults rather than validated civic policy. A wider
-deployment should tune them per incident type; a fire and a pothole should not
-necessarily share the same spatial or temporal window.
+The clustering constants are exported from `lib/incident-clustering.ts`. The
+current 2× accuracy multiplier, 25–250m clamp, and 72-hour window are hackathon
+defaults rather than validated civic policy. A wider deployment should tune them
+per incident type; a fire and a pothole should not necessarily share the same
+spatial or temporal window.
 
-## Mock government worker
+## Beacon mock government worker
 
-A local Playwright process (`npm run worker`) reads `public.incidents`. It does
-not regroup reports. When `evidence_count >= 2`, coordinates are present, and
-the routing disposition is not `emergency` or `no_submission`, it fills the
-mock government demo form and stores `mock_reference_id` on the incident.
-That confirmation is a demo ID, not a Baltimore City case number.
+Beacon is a local Playwright process (`npm run worker`) that listens for new `public.reports`
+rows, then loads the linked incident. It does
+not regroup reports. Each report stores a backend `case_score`. The incident
+score is `1 - Π(1 - independent case scores)` and never uses time. When that
+score is at least `0.6`, coordinates are present, and the incident has not
+already been mock-filed. Fires and other high-danger reports are included. It
+chooses a mock agency from the incident category: roads, sidewalks, and streetlights go
+to the Riverton DOT form; other civic issues go to the City 311 form. It stores
+`mock_reference_id` and `mock_agency` on the incident. That confirmation is a
+demo ID, not a Baltimore City case number. If `incident_score` is missing,
+Beacon falls back to the earlier `evidence_count >= 2` gate so older rows can
+still file.
 
 ## Baltimore 311 handoff
 

@@ -5,6 +5,7 @@ import { AnalysisStorageError } from '../lib/analysis-store.ts';
 import { GeminiAnalysisError } from '../lib/gemini.ts';
 import { normalizedTags } from '../lib/incident-taxonomy.mjs';
 import { baltimoreRouteForIncidentType } from '../lib/baltimore-311-routing.mjs';
+import { caseScoreFromAnalysis } from '../lib/incident-scoring.ts';
 
 const jpeg = Buffer.from([255, 216, 255]);
 const image = { path: 'https://test.supabase.co/storage/v1/object/public/report-photos/photo.jpg', hash: 'saved-image-hash' };
@@ -16,6 +17,7 @@ const unavailable = {
   category: 'unable_to_assess', incident_type: 'unable_to_assess', seriousness: null, ai_confidence: 0,
   context_summary: 'Image analysis was unavailable.', context_tags: [], tags: ['unable_to_assess'],
   baltimore_service_candidates: [], routing_disposition: 'manual_review',
+  case_score: caseScoreFromAnalysis(null, 0, 'unavailable'),
 };
 
 function deferred() {
@@ -94,6 +96,7 @@ test('storage and AI start concurrently, and review waits for the durable assess
   assert.deepEqual(value.analysis, {
     ...assessment, tags: ['pothole', 'roadway'],
     baltimore_service_candidates: ['TRM-Potholes', 'TRM-Pickup Pothole'], routing_disposition: '311',
+    case_score: caseScoreFromAnalysis(6, 80, 'complete'),
   });
   assert.equal('warning' in value, false);
   assert.equal(warnings.mock.callCount(), 0);
@@ -144,6 +147,7 @@ test('a completed but uncertain model response stays distinct from a service out
   assert.deepEqual(value.analysis, {
     ...uncertain, tags: ['unable_to_assess'],
     baltimore_service_candidates: [], routing_disposition: 'manual_review',
+    case_score: caseScoreFromAnalysis(null, 0, 'complete'),
   });
   assert.equal(value.analysis_status, 'complete');
   assert.equal(savedInputs[0].analysis_status, 'complete');
@@ -223,6 +227,7 @@ test('review returns the fields from the persisted analysis, not an unsaved draf
     category: 'other_hazard', incident_type: 'other_hazard', seriousness: 3, ai_confidence: 65,
     context_summary: 'Loose debris is visible.', context_tags: ['debris'], tags: ['debris', 'other_hazard'],
     baltimore_service_candidates: ['ECC-Citizen Complaint or Concern'], routing_disposition: 'manual_review',
+    case_score: caseScoreFromAnalysis(3, 65, 'complete'),
   };
   const { services } = createServices({ analyses: { save: async input => ({
     ...input, ...durable, id: 'durable-row-id', image_path: 'stored-photo-url', image_hash: 'stored-photo-hash',

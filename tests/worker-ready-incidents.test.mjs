@@ -19,31 +19,78 @@ function incident(overrides = {}) {
     mock_submitted_at: null,
     mock_status: 'pending',
     mock_error: null,
+    incident_score: 0.8,
+    government_report_status: 'ready_to_submit',
     ...overrides,
   };
 }
 
-test('worker files a clustered non-emergency incident with GPS and no mock confirmation', () => {
+test('worker files when incident_score meets the government threshold', () => {
   assert.equal(isReadyForMockFiling(incident()), true);
   assert.equal(skipReason(incident()), null);
 });
 
-test('worker skips incidents with evidence_count below 2', () => {
-  const row = incident({ evidence_count: 1 });
+test('worker files a clustered incident with GPS and no mock confirmation', () => {
+  assert.equal(isReadyForMockFiling(incident()), true);
+  assert.equal(skipReason(incident()), null);
+});
+
+test('worker skips incidents below the government score threshold', () => {
+  const row = incident({ incident_score: 0.19, government_report_status: 'not_ready', evidence_count: 1 });
+  assert.equal(isReadyForMockFiling(row), false);
+  assert.match(skipReason(row) ?? '', /incident_score 0.19/);
+});
+
+test('worker files a single severe incident above the threshold', () => {
+  const row = incident({
+    evidence_count: 1,
+    incident_score: 0.855,
+    government_report_status: 'ready_to_submit',
+  });
+  assert.equal(isReadyForMockFiling(row), true);
+});
+
+test('worker falls back to evidence_count when incident_score is missing', () => {
+  const row = incident({
+    incident_score: null,
+    government_report_status: 'not_ready',
+    evidence_count: 1,
+  });
   assert.equal(isReadyForMockFiling(row), false);
   assert.match(skipReason(row) ?? '', /evidence_count 1/);
 });
 
-test('worker skips emergency incidents', () => {
-  const row = incident({ routing_disposition: 'emergency' });
-  assert.equal(isReadyForMockFiling(row), false);
-  assert.equal(skipReason(row), 'emergency incidents are 911-only');
+test('worker files on evidence_count when score is missing and the cluster exists', () => {
+  const row = incident({
+    incident_score: null,
+    government_report_status: 'not_ready',
+    evidence_count: 2,
+  });
+  assert.equal(isReadyForMockFiling(row), true);
 });
 
-test('worker skips not-reportable incidents', () => {
-  const row = incident({ routing_disposition: 'no_submission' });
+test('worker files emergency incidents when the score is above the threshold', () => {
+  const row = incident({
+    category: 'fire_injury_or_immediate_threat',
+    incident_type: 'structure_fire',
+    routing_disposition: 'emergency',
+    evidence_count: 1,
+    incident_score: 0.99,
+    government_report_status: 'ready_to_submit',
+  });
+  assert.equal(isReadyForMockFiling(row), true);
+  assert.equal(skipReason(row), null);
+});
+
+test('worker skips not-reportable incidents below the score threshold', () => {
+  const row = incident({
+    routing_disposition: 'no_submission',
+    incident_score: 0,
+    government_report_status: 'not_ready',
+    evidence_count: 1,
+  });
   assert.equal(isReadyForMockFiling(row), false);
-  assert.equal(skipReason(row), 'not reportable');
+  assert.match(skipReason(row) ?? '', /incident_score 0/);
 });
 
 test('worker skips incidents that already have a mock reference id', () => {
@@ -63,6 +110,7 @@ test('worker skips incidents without coordinates', () => {
   assert.equal(isReadyForMockFiling(row), false);
   assert.equal(skipReason(row), 'missing latitude/longitude');
 });
+
 
 test('worker builds mock form fields from the incident and first attached report', () => {
   const payload = buildMockFormPayload(incident(), [

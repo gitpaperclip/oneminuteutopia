@@ -10,6 +10,20 @@ import {
 import { baltimoreRouteForIncidentType } from './baltimore-311-routing.mjs';
 import type { SavedAnalysis } from './analysis-store.ts';
 import type { ReportInput } from './report-input.ts';
+import {
+  caseScoreFromAnalysis,
+  caseScoreFromReport,
+  recalculateIncident,
+  type GovernmentReportStatus,
+} from './incident-scoring.ts';
+import {
+  INCIDENT_CLUSTER_SEARCH_METERS,
+  INCIDENT_CLUSTER_WINDOW_MS,
+  boundingBoxDeltas,
+  chooseKeeperIncident,
+  clusterRadiusMeters,
+  overlappingIncidentIds,
+} from './incident-clustering.ts';
 import { confirmationsUnavailableMessage, isMissingConfirmationsSchema } from './confirmation-schema.ts';
 
 export interface Report {
@@ -41,6 +55,7 @@ export interface Report {
   created_at: number;
   withdrawn: number;
   idempotency_key: string | null;
+  case_score: number | null;
 }
 
 export interface Incident {
@@ -71,25 +86,135 @@ export interface Incident {
   mock_submitted_at: number | null;
   mock_status: 'pending' | 'submitted' | 'failed';
   mock_error: string | null;
+  mock_agency: 'transportation' | 'general' | null;
+  incident_score: number;
+  report_count: number;
+  government_report_status: GovernmentReportStatus;
 }
 
-export const INCIDENT_CLUSTER_RADIUS_METERS = 150;
-export const INCIDENT_CLUSTER_WINDOW_MS = 72 * 60 * 60 * 1000;
+export {
+  CLUSTER_ACCURACY_MULTIPLIER,
+  INCIDENT_CLUSTER_SEARCH_METERS,
+  INCIDENT_CLUSTER_WINDOW_MS,
+  clusterRadiusMeters,
+} from './incident-clustering.ts';
 
-function distanceMeters(aLat: number, aLon: number, bLat: number, bLon: number): number {
-  const radians = (degrees: number) => degrees * Math.PI / 180;
-  const dLat = radians(bLat - aLat);
-  const dLon = radians(bLon - aLon);
-  const lat1 = radians(aLat);
-  const lat2 = radians(bLat);
-  const value = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 6_371_000 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+type SqlTx = postgres.TransactionSql;
+
+const GOVERNMENT_STATUS_RANK: Record<GovernmentReportStatus, number> = {
+  not_ready: 0,
+  ready_to_submit: 1,
+  submitting: 2,
+  failed: 3,
+  submitted: 4,
+};
+
+function preferredGovernmentStatus(
+  current: GovernmentReportStatus,
+  incoming: GovernmentReportStatus | null | undefined,
+): GovernmentReportStatus {
+  if (!incoming) return current;
+  return (GOVERNMENT_STATUS_RANK[incoming] ?? 0) >= (GOVERNMENT_STATUS_RANK[current] ?? 0)
+    ? incoming
+    : current;
 }
 
-function meanWithOptionalValue(current: number | null, count: number, value: number | null): number | null {
-  if (value === null) return current;
-  if (current === null) return value;
-  return ((current * count) + value) / (count + 1);
+async function absorbIncidents(
+  tx: SqlTx,
+  keeper: Incident,
+  absorbed: Incident[],
+  now: number,
+): Promise<void> {
+  if (absorbed.length === 0) return;
+  const mockSource = [keeper, ...absorbed].find(item => item.mock_status === 'submitted')
+    ?? [keeper, ...absorbed].find(item => item.mock_status === 'failed')
+    ?? keeper;
+  let governmentStatus = keeper.government_report_status ?? 'not_ready';
+  for (const item of absorbed) {
+    governmentStatus = preferredGovernmentStatus(governmentStatus, item.government_report_status);
+  }
+  await tx`UPDATE public.incidents SET
+    mock_reference_id = ${mockSource.mock_reference_id},
+    mock_submitted_at = ${mockSource.mock_submitted_at},
+    mock_status = ${mockSource.mock_status},
+    mock_error = ${mockSource.mock_error},
+    mock_agency = ${mockSource.mock_agency},
+    government_report_status = ${governmentStatus},
+    updated_at = ${now}
+    WHERE id = ${keeper.id}`;
+  for (const item of absorbed) {
+    await tx`UPDATE public.reports SET incident_id = ${keeper.id} WHERE incident_id = ${item.id}`;
+    await tx`UPDATE public.image_analyses SET incident_id = ${keeper.id} WHERE incident_id = ${item.id}`;
+    await tx`
+      INSERT INTO public.incident_confirmations (incident_id, session_id, created_at)
+      SELECT ${keeper.id}, session_id, created_at
+      FROM public.incident_confirmations
+      WHERE incident_id = ${item.id}
+      ON CONFLICT (incident_id, session_id) DO NOTHING`;
+    await tx`DELETE FROM public.incident_confirmations WHERE incident_id = ${item.id}`;
+    await tx`UPDATE public.incidents SET
+      status = 'merged', evidence_count = 0, report_count = 0, updated_at = ${now}
+      WHERE id = ${item.id}`;
+  }
+  const [confirmation] = await tx<[{ confirmation_count: number }]>`
+    SELECT COUNT(*)::int AS confirmation_count
+    FROM public.incident_confirmations
+    WHERE incident_id = ${keeper.id}`;
+  await tx`UPDATE public.incidents SET confirmation_count = ${confirmation.confirmation_count}
+    WHERE id = ${keeper.id}`;
+}
+
+async function refreshIncidentAggregates(tx: SqlTx, incidentId: string, now: number): Promise<void> {
+  const reports = (await tx`SELECT * FROM public.reports WHERE incident_id = ${incidentId} AND withdrawn = 0
+    ORDER BY created_at ASC`) as Report[];
+  const [incident] = (await tx`SELECT * FROM public.incidents WHERE id = ${incidentId}`) as Incident[];
+  if (!incident) throw new Error('Incident is missing');
+  const located = reports.filter(report => report.latitude != null && report.longitude != null);
+  const latitude = located.length
+    ? located.reduce((sum, report) => sum + report.latitude!, 0) / located.length
+    : incident.latitude;
+  const longitude = located.length
+    ? located.reduce((sum, report) => sum + report.longitude!, 0) / located.length
+    : incident.longitude;
+  const tags = [...new Set(reports.flatMap(report => report.tags ?? []))].sort();
+  const services = [...new Set(reports.flatMap(report => report.baltimore_service_candidates ?? []))].sort();
+  const confidences = reports
+    .map(report => report.ai_confidence)
+    .filter((value): value is number => value != null);
+  const averageConfidence = confidences.length
+    ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length
+    : null;
+  const clusterRadius = Math.max(
+    clusterRadiusMeters(null),
+    ...reports.map(report => clusterRadiusMeters(report.location_accuracy)),
+  );
+  const routingDisposition = reports.some(report => report.routing_disposition === 'emergency')
+    ? 'emergency'
+    : (reports.at(-1)?.routing_disposition ?? incident.routing_disposition);
+  const locationAddress = incident.location_address
+    ?? reports.find(report => report.location_address)?.location_address
+    ?? null;
+  const aggregates = recalculateIncident(reports, incident.government_report_status);
+  for (const report of reports) {
+    const score = caseScoreFromReport(report);
+    if (report.case_score == null && score != null && report.id) {
+      await tx`UPDATE public.reports SET case_score = ${score} WHERE id = ${report.id}`;
+    }
+  }
+  await tx`UPDATE public.incidents SET
+    evidence_count = ${reports.length}, tags = ${tags},
+    baltimore_service_candidates = ${services}, routing_disposition = ${routingDisposition},
+    latitude = ${latitude}, longitude = ${longitude}, location_address = ${locationAddress},
+    highest_seriousness = ${aggregates.highest_seriousness},
+    average_ai_confidence = ${averageConfidence},
+    ai_evidence_count = ${confidences.length},
+    cluster_radius_m = ${clusterRadius},
+    last_reported_at = ${now},
+    incident_score = ${aggregates.incident_score},
+    report_count = ${aggregates.report_count},
+    government_report_status = ${aggregates.government_report_status},
+    updated_at = ${now}
+    WHERE id = ${incidentId}`;
 }
 
 export class DatabaseService {
@@ -116,7 +241,9 @@ export class DatabaseService {
       FROM public.reports r FULL JOIN public.image_analyses a ON a.report_id = r.id LIMIT 1`;
     await sql`SELECT id FROM public.sessions LIMIT 1`;
     await sql`SELECT key FROM public.request_limits LIMIT 1`;
-    await sql`SELECT incident_type, evidence_count, confirmation_count, tags, mock_status, mock_reference_id FROM public.incidents LIMIT 1`;
+    await sql`SELECT incident_type, evidence_count, confirmation_count, tags, mock_status, mock_reference_id,
+      incident_score, report_count, government_report_status FROM public.incidents LIMIT 1`;
+    await sql`SELECT case_score FROM public.reports LIMIT 1`;
     await sql`SELECT incident_id FROM public.incident_confirmations LIMIT 1`;
   }
 
@@ -179,15 +306,17 @@ export class DatabaseService {
       const contextTags = Array.isArray(analysis.context_tags) ? analysis.context_tags : [];
       const tags = normalizedTags(incidentType, contextTags);
       const confidence = analysis.analysis_status === 'complete' ? analysis.ai_confidence / 100 : null;
+      const caseScore = caseScoreFromAnalysis(
+        analysis.seriousness, analysis.ai_confidence, analysis.analysis_status,
+      );
 
-      let incident: Incident | undefined;
+      let incidentId: string | undefined;
+      let clustered = false;
       if (input.latitude !== null && input.longitude !== null) {
         // Serialize clustering for one subtype so simultaneous first reports do not
         // create competing super-reports before either transaction can see the other.
         await tx`SELECT pg_advisory_xact_lock(hashtext(${incidentType}))`;
-        const latitudeDelta = INCIDENT_CLUSTER_RADIUS_METERS / 111_320;
-        const longitudeDelta = INCIDENT_CLUSTER_RADIUS_METERS /
-          (111_320 * Math.max(Math.cos(input.latitude * Math.PI / 180), 0.01));
+        const { latitudeDelta, longitudeDelta } = boundingBoxDeltas(input.latitude, INCIDENT_CLUSTER_SEARCH_METERS);
         const candidates = await tx<Incident[]>`SELECT * FROM public.incidents
           WHERE incident_type = ${incidentType}
             AND status IN ('reported', 'in_progress')
@@ -195,45 +324,43 @@ export class DatabaseService {
             AND latitude BETWEEN ${input.latitude - latitudeDelta} AND ${input.latitude + latitudeDelta}
             AND longitude BETWEEN ${input.longitude - longitudeDelta} AND ${input.longitude + longitudeDelta}
           FOR UPDATE`;
-        incident = candidates
-          .map(candidate => ({ candidate, distance: distanceMeters(
-            input.latitude!, input.longitude!, candidate.latitude!, candidate.longitude!,
-          ) }))
-          .filter(item => item.distance <= INCIDENT_CLUSTER_RADIUS_METERS)
-          .sort((a, b) => a.distance - b.distance)[0]?.candidate;
+        const memberReports = candidates.length === 0 ? [] : await tx<(Pick<Report, 'incident_id' | 'latitude' | 'longitude' | 'location_accuracy'>)[]>`
+          SELECT r.incident_id, r.latitude, r.longitude, r.location_accuracy
+          FROM public.reports r
+          INNER JOIN public.incidents i ON i.id = r.incident_id
+          WHERE i.incident_type = ${incidentType}
+            AND i.status IN ('reported', 'in_progress')
+            AND i.updated_at >= ${now - INCIDENT_CLUSTER_WINDOW_MS}
+            AND r.withdrawn = 0
+            AND r.latitude IS NOT NULL AND r.longitude IS NOT NULL
+            AND r.latitude BETWEEN ${input.latitude - latitudeDelta} AND ${input.latitude + latitudeDelta}
+            AND r.longitude BETWEEN ${input.longitude - longitudeDelta} AND ${input.longitude + longitudeDelta}`;
+        const matchIds = overlappingIncidentIds(
+          {
+            latitude: input.latitude,
+            longitude: input.longitude,
+            location_accuracy: input.location_accuracy,
+          },
+          memberReports.flatMap(report => {
+            if (report.latitude == null || report.longitude == null) return [];
+            return [{
+              incident_id: report.incident_id,
+              latitude: report.latitude,
+              longitude: report.longitude,
+              location_accuracy: report.location_accuracy,
+            }];
+          }),
+        );
+        const matched = candidates.filter(candidate => matchIds.includes(candidate.id));
+        if (matched.length > 0) {
+          clustered = true;
+          const keeper = chooseKeeperIncident(matched);
+          incidentId = keeper.id;
+          await absorbIncidents(tx, keeper, matched.filter(item => item.id !== keeper.id), now);
+        }
       }
 
-      let incidentId: string;
-      let clustered = false;
-      if (incident) {
-        clustered = true;
-        incidentId = incident.id;
-        const previousCount = incident.evidence_count;
-        const evidenceCount = previousCount + 1;
-        const mergedTags = [...new Set([...(incident.tags ?? []), ...tags])].sort();
-        const mergedServices = [...new Set([
-          ...(incident.baltimore_service_candidates ?? []), ...serviceCandidates,
-        ])].sort();
-        const latitude = input.latitude === null ? incident.latitude :
-          (((incident.latitude ?? input.latitude) * previousCount) + input.latitude) / evidenceCount;
-        const longitude = input.longitude === null ? incident.longitude :
-          (((incident.longitude ?? input.longitude) * previousCount) + input.longitude) / evidenceCount;
-        const highestSeriousness = analysis.seriousness === null ? incident.highest_seriousness :
-          Math.max(incident.highest_seriousness ?? 0, analysis.seriousness);
-        const averageConfidence = meanWithOptionalValue(
-          incident.average_ai_confidence, incident.ai_evidence_count, confidence,
-        );
-        const aiEvidenceCount = incident.ai_evidence_count + (confidence === null ? 0 : 1);
-        await tx`UPDATE public.incidents SET
-          evidence_count = ${evidenceCount}, tags = ${mergedTags},
-          baltimore_service_candidates = ${mergedServices}, routing_disposition = ${routingDisposition},
-          latitude = ${latitude}, longitude = ${longitude},
-          location_address = COALESCE(location_address, ${input.location_address}),
-          highest_seriousness = ${highestSeriousness}, average_ai_confidence = ${averageConfidence},
-          ai_evidence_count = ${aiEvidenceCount},
-          last_reported_at = ${now}, updated_at = ${now}
-          WHERE id = ${incidentId}`;
-      } else {
+      if (!incidentId) {
         incidentId = nanoid();
         await tx`INSERT INTO public.incidents (
           id, category, incident_type, short_label, full_description, tags,
@@ -244,7 +371,7 @@ export class DatabaseService {
           VALUES (${incidentId}, ${input.category}, ${incidentType}, ${label}, ${input.user_description}, ${tags},
           ${serviceCandidates}, ${routingDisposition},
           ${input.latitude}, ${input.longitude}, ${input.location_address}, 'reported', 'normal', 0,
-          1, ${analysis.seriousness}, ${confidence}, ${confidence === null ? 0 : 1}, ${INCIDENT_CLUSTER_RADIUS_METERS},
+          1, ${analysis.seriousness}, ${confidence}, ${confidence === null ? 0 : 1}, ${clusterRadiusMeters(input.location_accuracy)},
           ${now}, ${now}, ${now})`;
       }
       const [report] = await tx<Report[]>`INSERT INTO public.reports (
@@ -252,15 +379,17 @@ export class DatabaseService {
         full_description, user_description, latitude, longitude, location_accuracy, location_source,
         location_address, ai_confidence, ai_model, user_corrected, created_at, idempotency_key,
         seriousness, analysis_status, context_summary, tags,
-        baltimore_service_candidates, routing_disposition)
+        baltimore_service_candidates, routing_disposition, case_score)
         VALUES (${reportId}, ${incidentId}, ${sessionId}, ${analysis.image_path}, ${analysis.image_hash}, ${input.category}, ${incidentType}, ${label},
         ${input.user_description}, ${input.user_description}, ${input.latitude}, ${input.longitude}, ${input.location_accuracy}, ${input.location_source},
         ${input.location_address}, ${confidence}, ${analysis.model}, ${corrected}, ${now}, ${analysis.id},
         ${analysis.seriousness}, ${analysis.analysis_status}, ${analysis.context_summary}, ${tags},
-        ${serviceCandidates}, ${routingDisposition}) RETURNING *`;
+        ${serviceCandidates}, ${routingDisposition}, ${caseScore}) RETURNING *`;
       await tx`UPDATE public.image_analyses SET report_id = ${reportId}, incident_id = ${incidentId},
-        latitude = ${input.latitude}, longitude = ${input.longitude}, location_address = ${input.location_address}, submitted_at = now()
+        latitude = ${input.latitude}, longitude = ${input.longitude}, location_address = ${input.location_address},
+        submitted_at = now(), case_score = ${caseScore}
         WHERE id = ${analysis.id} AND session_id = ${sessionId}`;
+      await refreshIncidentAggregates(tx, incidentId, now);
       return { report, duplicate: false, clustered };
     });
   }
@@ -285,6 +414,7 @@ export class DatabaseService {
       WHERE (${category}::text IS NULL OR category = ${category})
         AND (${incidentType}::text IS NULL OR incident_type = ${incidentType})
         AND (${tag}::text IS NULL OR ${tag} = ANY(tags))
+        AND status <> 'merged'
         AND (${commonOnly} = false OR evidence_count >= 2)
         AND (${includeUnlocated} = true OR (latitude IS NOT NULL AND longitude IS NOT NULL))
         AND (${minLat}::float8 IS NULL OR (

@@ -13,6 +13,9 @@ const migrations = await Promise.all([
   '202609190003_baltimore_311_routing.sql',
   '202609190004_mock_government_submission.sql',
   '202609190005_incident_confirmations.sql',
+  '202609190006_mock_agency.sql',
+  '202609190007_reports_realtime.sql',
+  '202609190008_incident_scoring.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 function connect(db) {
@@ -109,7 +112,9 @@ test('confirming without the confirmations migration is a clear schema error', a
   const db = new PGlite();
   t.after(() => db.close());
   await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;');
-  for (const migration of migrations.slice(0, 5)) await db.exec(migration);
+  // Apply scoring/agency columns so submitReport can persist, but omit
+  // 202609190005_incident_confirmations.sql so the 503 path is still covered.
+  for (const migration of [...migrations.slice(0, 5), ...migrations.slice(6)]) await db.exec(migration);
   t.mock.method(DatabaseService, 'getConnection', () => connect(db));
   const reporter = await DatabaseService.createSession();
   const viewer = await DatabaseService.createSession();
