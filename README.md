@@ -223,11 +223,6 @@ supabase/migrations/                      Database setup in execution order
 tests/                                    Contract and regression tests
 ```
 
-## Links
-
-  repository for mock government sites that are used for testing and demo
-  general reports:                https://github.com/A1x-Z/mock_government_page_without_api
-  public transportation specific: https://github.com/A1x-Z/mock_second_gov_site_transportation_specific
   
 ## Troubleshooting
 
@@ -251,6 +246,13 @@ tests/                                    Contract and regression tests
   0.6 (`government_report_status` is `ready_to_submit`), apply
   `202609190007_reports_realtime.sql`, and run `npx playwright install chromium`.
   Already-filed incidents are skipped on purpose.
+
+## Links
+
+Repository for mock government sites that are used for testing and demo:
+general reports: https://github.com/A1x-Z/mock_government_page_without_api
+public transportation specific: https://github.com/A1x-Z/mock_second_gov_site_transportation_specific
+
 
 ## License
 
