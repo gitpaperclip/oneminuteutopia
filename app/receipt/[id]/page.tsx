@@ -25,12 +25,6 @@ function mockPortalCopy(incident: Incident | undefined) {
       body: 'This report is saved here. It is not a Baltimore City case.',
     };
   }
-  if (incident.routing_disposition === 'emergency') {
-    return {
-      title: 'Emergency',
-      body: 'Call 911. This app does not file emergencies with 311 or the mock portal.',
-    };
-  }
   if (incident.routing_disposition === 'no_submission') {
     return {
       title: 'Mock city portal',

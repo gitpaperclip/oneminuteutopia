@@ -106,7 +106,7 @@ test('nearby reports with the same normalized type become one queryable super-re
   assert.equal(incident.highest_seriousness, 8);
   assert.equal(incident.report_count, 2);
   assert.equal(incident.government_report_status, 'ready_to_submit');
-  assert.ok(incident.incident_score >= 0.75);
+  assert.ok(incident.incident_score >= 0.6);
   assert.equal(incident.average_ai_confidence, 0.855);
   assert.deepEqual(incident.tags, ['pothole', 'roadway', 'sidewalk']);
   const common = await DatabaseService.listIncidents({ incidentType: 'pothole', commonOnly: true });
@@ -121,7 +121,7 @@ test('two independent high-danger reports cross the government threshold without
   }));
   const firstIncident = await DatabaseService.getIncident(first.report.incident_id);
   assert.equal(firstIncident.government_report_status, 'not_ready');
-  assert.ok(firstIncident.incident_score < 0.75);
+  assert.ok(firstIncident.incident_score < 0.6);
 
   const secondSession = await DatabaseService.createSession();
   const secondAnalysis = '33333333-3333-4333-8333-333333333333';

@@ -29,12 +29,6 @@ export function skipReason(incident: WorkerIncident): string | null {
   if (incident.latitude == null || incident.longitude == null) {
     return 'missing latitude/longitude';
   }
-  if (incident.routing_disposition === 'emergency') {
-    return 'emergency incidents are 911-only';
-  }
-  if (incident.routing_disposition === 'no_submission') {
-    return 'not reportable';
-  }
   if (incident.status !== 'reported' && incident.status !== 'in_progress') {
     return `status ${incident.status} is not open`;
   }

@@ -15,12 +15,6 @@ const TRANSPORT_CATEGORIES = new Set([
   'traffic_signals_and_streetlights',
 ]);
 
-const SKIP_CATEGORIES = new Set([
-  'fire_injury_or_immediate_threat',
-  'no_visible_hazard',
-  'unable_to_assess',
-]);
-
 const TRANSPORT_HINT =
   /\b(pothole|sidewalk|streetlight|street light|traffic signal|traffic light|roadway|pavement|guardrail|crosswalk|stop sign|lane marking|bike lane|broken street|crack(?:s|ed)? (?:in|on) (?:the )?road)\b/i;
 
@@ -63,14 +57,6 @@ export function routeIncident(
   incident: WorkerIncident,
   extraText = '',
 ): MockAgencyRoute | null {
-  if (
-    SKIP_CATEGORIES.has(incident.category) ||
-    incident.routing_disposition === 'emergency' ||
-    incident.routing_disposition === 'no_submission'
-  ) {
-    return null;
-  }
-
   if (TRANSPORT_CATEGORIES.has(incident.category)) {
     return mockAgencyRoute('transportation');
   }

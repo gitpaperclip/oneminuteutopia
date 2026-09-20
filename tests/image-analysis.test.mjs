@@ -383,8 +383,9 @@ test('Supabase retries a transient analysis write with one stable id', async t =
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async (_url, init) => {
     calls++;
-    ids.push(JSON.parse(init.body).id);
-    return calls === 1 ? response({}, 503) : response([{ id: ids[0], ...result }], 201);
+    const body = JSON.parse(init.body);
+    ids.push(body.id);
+    return calls === 1 ? response({}, 503) : response([{ ...body, id: ids[0] }], 201);
   });
   const saved = await AnalysisStore.save(storedInput);
   assert.equal(calls, 2);

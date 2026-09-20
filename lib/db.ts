@@ -12,6 +12,7 @@ import type { SavedAnalysis } from './analysis-store.ts';
 import type { ReportInput } from './report-input.ts';
 import {
   caseScoreFromAnalysis,
+  caseScoreFromReport,
   recalculateIncident,
   type GovernmentReportStatus,
 } from './incident-scoring.ts';
@@ -194,6 +195,12 @@ async function refreshIncidentAggregates(tx: SqlTx, incidentId: string, now: num
     ?? reports.find(report => report.location_address)?.location_address
     ?? null;
   const aggregates = recalculateIncident(reports, incident.government_report_status);
+  for (const report of reports) {
+    const score = caseScoreFromReport(report);
+    if (report.case_score == null && score != null && report.id) {
+      await tx`UPDATE public.reports SET case_score = ${score} WHERE id = ${report.id}`;
+    }
+  }
   await tx`UPDATE public.incidents SET
     evidence_count = ${reports.length}, tags = ${tags},
     baltimore_service_candidates = ${services}, routing_disposition = ${routingDisposition},

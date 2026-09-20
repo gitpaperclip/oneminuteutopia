@@ -120,9 +120,9 @@ A local Playwright process (`npm run worker`) listens for new `public.reports`
 rows, then loads the linked incident. It does
 not regroup reports. Each report stores a backend `case_score`. The incident
 score is `1 - Π(1 - independent case scores)` and never uses time. When that
-score is at least `0.75`, coordinates are present, and
-the routing disposition is not `emergency` or `no_submission`, it chooses a
-mock agency from the incident category: roads, sidewalks, and streetlights go
+score is at least `0.6`, coordinates are present, and the incident has not
+already been mock-filed. Fires and other high-danger reports are included. It
+chooses a mock agency from the incident category: roads, sidewalks, and streetlights go
 to the Riverton DOT form; other civic issues go to the City 311 form. It stores
 `mock_reference_id` and `mock_agency` on the incident. That confirmation is a
 demo ID, not a Baltimore City case number. If `incident_score` is missing, the

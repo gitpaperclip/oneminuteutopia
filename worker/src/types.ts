@@ -25,10 +25,17 @@ export interface WorkerIncident {
 }
 
 export interface WorkerReport {
+  id?: string | null;
+  session_id?: string | null;
   image_path: string | null;
   user_description: string | null;
   context_summary: string | null;
   location_address: string | null;
+  case_score?: number | null;
+  seriousness?: number | null;
+  ai_confidence?: number | null;
+  analysis_status?: string | null;
+  withdrawn?: number | boolean | null;
 }
 
 export interface MockGovernmentPayload {

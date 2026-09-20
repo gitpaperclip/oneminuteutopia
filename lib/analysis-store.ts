@@ -82,6 +82,17 @@ export class AnalysisStore {
       }),
     }, true);
     if (!saved?.id) throw new Error('Analysis was not saved');
+    if (saved.case_score == null && Number.isFinite(case_score)) {
+      try {
+        const [patched] = await this.request(`?id=eq.${encodeURIComponent(saved.id)}`, {
+          method: 'PATCH', body: JSON.stringify({ case_score }),
+        });
+        if (patched?.id) return patched;
+      } catch {
+        saved.case_score = case_score;
+      }
+      saved.case_score = case_score;
+    }
     return saved;
   }
 

@@ -30,7 +30,7 @@ test('worker files when incident_score meets the government threshold', () => {
   assert.equal(skipReason(incident()), null);
 });
 
-test('worker files a clustered non-emergency incident with GPS and no mock confirmation', () => {
+test('worker files a clustered incident with GPS and no mock confirmation', () => {
   assert.equal(isReadyForMockFiling(incident()), true);
   assert.equal(skipReason(incident()), null);
 });
@@ -69,16 +69,28 @@ test('worker files on evidence_count when score is missing and the cluster exist
   assert.equal(isReadyForMockFiling(row), true);
 });
 
-test('worker skips emergency incidents', () => {
-  const row = incident({ routing_disposition: 'emergency' });
-  assert.equal(isReadyForMockFiling(row), false);
-  assert.equal(skipReason(row), 'emergency incidents are 911-only');
+test('worker files emergency incidents when the score is above the threshold', () => {
+  const row = incident({
+    category: 'fire_injury_or_immediate_threat',
+    incident_type: 'structure_fire',
+    routing_disposition: 'emergency',
+    evidence_count: 1,
+    incident_score: 0.99,
+    government_report_status: 'ready_to_submit',
+  });
+  assert.equal(isReadyForMockFiling(row), true);
+  assert.equal(skipReason(row), null);
 });
 
-test('worker skips not-reportable incidents', () => {
-  const row = incident({ routing_disposition: 'no_submission' });
+test('worker skips not-reportable incidents below the score threshold', () => {
+  const row = incident({
+    routing_disposition: 'no_submission',
+    incident_score: 0,
+    government_report_status: 'not_ready',
+    evidence_count: 1,
+  });
   assert.equal(isReadyForMockFiling(row), false);
-  assert.equal(skipReason(row), 'not reportable');
+  assert.match(skipReason(row) ?? '', /incident_score 0/);
 });
 
 test('worker skips incidents that already have a mock reference id', () => {
@@ -98,6 +110,7 @@ test('worker skips incidents without coordinates', () => {
   assert.equal(isReadyForMockFiling(row), false);
   assert.equal(skipReason(row), 'missing latitude/longitude');
 });
+
 
 test('worker builds mock form fields from the incident and first attached report', () => {
   const payload = buildMockFormPayload(incident(), [

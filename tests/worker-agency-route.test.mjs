@@ -74,10 +74,13 @@ test('other hazard without a roadway hint files to general 311', () => {
   assert.equal(route?.agency, 'general');
 });
 
-test('emergency and unassessable categories are not filed to a mock agency', () => {
-  assert.equal(routeIncident(incident({ category: 'fire_injury_or_immediate_threat' })), null);
-  assert.equal(routeIncident(incident({ category: 'no_visible_hazard' })), null);
-  assert.equal(routeIncident(incident({ category: 'unable_to_assess' })), null);
-  assert.equal(routeIncident(incident({ routing_disposition: 'emergency' })), null);
-  assert.equal(routeIncident(incident({ routing_disposition: 'no_submission' })), null);
+test('fires and other civic issues file to the general City 311 mock site', () => {
+  assert.equal(routeIncident(incident({
+    category: 'fire_injury_or_immediate_threat',
+    incident_type: 'structure_fire',
+    routing_disposition: 'emergency',
+  }))?.agency, 'general');
+  assert.equal(routeIncident(incident({ category: 'no_visible_hazard' }))?.agency, 'general');
+  assert.equal(routeIncident(incident({ routing_disposition: 'emergency' }))?.agency, 'transportation');
+  assert.equal(routeIncident(incident({ routing_disposition: 'no_submission' }))?.agency, 'transportation');
 });

@@ -45,16 +45,15 @@ never displayed as zero risk.
 5. Open the durable receipt, Baltimore reporting destination, or public map.
 
 A separate local worker (`npm run worker`) listens for new rows on
-`public.reports`. When an incident's combined score reaches 0.75, it files that
+`public.reports`. When an incident's combined score reaches 0.6, it files that
 cluster to a **mock** government website with Playwright and stores the
 confirmation on the incident. Dangerous issues can file from one strong report;
 minor issues need several independent reporters. Roads, sidewalks, and
-streetlights go to the Riverton DOT mock; other non-emergency issues go to the
-City 311 mock. It does not call Baltimore 311.
+streetlights go to the Riverton DOT mock; other civic issues, including fires,
+go to the City 311 mock. It does not call Baltimore 311.
 
-The emergency guardrail treats active fires, visible serious injuries, downed
-power lines, and similar immediate threats as 911-first situations rather than
-ordinary 311 requests.
+The confirm screen still shows a 911 button for fires and similar threats. The
+demo worker still files those incidents when the score is high enough.
 
 ## Architecture
 
@@ -151,8 +150,9 @@ npm run worker
 
 It reads the same `.env.local` as the app. On startup it checks existing
 incidents once, then waits for new `public.reports` inserts instead of polling
-every 10 seconds. A visible browser opens only for non-emergency incidents whose
-incident score is at least 0.75 and that have not already been filed. Road and
+every 10 seconds. A visible browser opens for incidents whose
+incident score is at least 0.6 and that have not already been filed, including
+fires and other high-danger reports. Road and
 streetlight clusters open the transportation mock; litter and other civic issues
 open the general 311 mock. Apply `202609190007_reports_realtime.sql` so Supabase
 Realtime publishes `reports`. `MOCK_GOVERNMENT_URL` and
@@ -239,9 +239,9 @@ tests/                                    Contract and regression tests
 - **Worker never opens a browser:** apply
   `202609190004_mock_government_submission.sql` through
   `202609190008_incident_scoring.sql`, confirm the incident score is at least
-  0.75 (`government_report_status` is `ready_to_submit`), apply
+  0.6 (`government_report_status` is `ready_to_submit`), apply
   `202609190007_reports_realtime.sql`, and run `npx playwright install chromium`.
-  Emergencies and already-filed incidents are skipped on purpose.
+  Already-filed incidents are skipped on purpose.
 
 ## License
 

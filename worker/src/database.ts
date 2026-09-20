@@ -1,5 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { MockAgency, MockStatus, WorkerIncident, WorkerReport } from './types.ts';
+import {
+  caseScoreFromReport,
+  recalculateIncident,
+  type GovernmentReportStatus,
+} from '../../lib/incident-scoring.ts';
 
 export function createWorkerClient(): SupabaseClient {
   const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL)?.trim();
@@ -60,7 +65,7 @@ export async function fetchIncidentReports(
 ): Promise<WorkerReport[]> {
   const { data, error } = await client
     .from('reports')
-    .select('image_path, user_description, context_summary, location_address')
+    .select('id, session_id, image_path, user_description, context_summary, location_address, case_score, seriousness, ai_confidence, analysis_status, withdrawn')
     .eq('incident_id', incidentId)
     .eq('withdrawn', 0)
     .order('created_at', { ascending: true });
@@ -72,6 +77,57 @@ export async function fetchIncidentReports(
   }
 
   return (data ?? []) as WorkerReport[];
+}
+
+export async function persistIncidentScores(
+  client: SupabaseClient,
+  incident: WorkerIncident,
+  reports: WorkerReport[],
+): Promise<WorkerIncident> {
+  const scoredReports = reports.map(report => ({
+    session_id: report.session_id ?? incident.id,
+    case_score: report.case_score,
+    seriousness: report.seriousness,
+    ai_confidence: report.ai_confidence,
+    analysis_status: report.analysis_status,
+    withdrawn: report.withdrawn,
+  }));
+  const aggregates = recalculateIncident(
+    scoredReports,
+    incident.government_report_status as GovernmentReportStatus | null,
+  );
+  for (const report of reports) {
+    const score = caseScoreFromReport({
+      session_id: report.session_id ?? incident.id,
+      case_score: report.case_score,
+      seriousness: report.seriousness,
+      ai_confidence: report.ai_confidence,
+      analysis_status: report.analysis_status,
+      withdrawn: report.withdrawn,
+    });
+    if (report.id && report.case_score == null && score != null) {
+      const { error } = await client.from('reports').update({ case_score: score }).eq('id', report.id);
+      if (!error) report.case_score = score;
+    }
+  }
+  if (
+    aggregates.incident_score === incident.incident_score
+    && aggregates.report_count === incident.report_count
+    && aggregates.government_report_status === incident.government_report_status
+  ) {
+    return { ...incident, ...aggregates };
+  }
+  const { error } = await client.from('incidents').update({
+    incident_score: aggregates.incident_score,
+    report_count: aggregates.report_count,
+    highest_seriousness: aggregates.highest_seriousness,
+    government_report_status: aggregates.government_report_status,
+  }).eq('id', incident.id);
+  if (error) {
+    console.error(`Could not persist scores for incident ${incident.id}:`);
+    console.error(error.message);
+  }
+  return { ...incident, ...aggregates };
 }
 
 export async function markIncidentSubmitted(

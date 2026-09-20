@@ -1,4 +1,4 @@
-export const GOVERNMENT_REPORT_THRESHOLD = 0.75;
+export const GOVERNMENT_REPORT_THRESHOLD = 0.6;
 export const MIN_DANGER_LEVEL = 0;
 export const MAX_DANGER_LEVEL = 10;
 export const MIN_AI_CONFIDENCE = 0;
@@ -15,6 +15,8 @@ export interface ScoreableReport {
   session_id: string;
   case_score?: number | null;
   seriousness?: number | null;
+  ai_confidence?: number | null;
+  analysis_status?: string | null;
   withdrawn?: number | boolean | null;
 }
 
@@ -52,6 +54,14 @@ export function caseScoreFromAnalysis(
   return calculateCaseScore(seriousness, confidence01);
 }
 
+export function caseScoreFromReport(report: ScoreableReport): number | null {
+  if (report.withdrawn) return null;
+  const stored = finiteNumber(report.case_score);
+  if (stored != null) return Math.max(0, Math.min(1, stored));
+  if (report.seriousness == null || report.ai_confidence == null) return null;
+  return caseScoreFromAnalysis(report.seriousness, report.ai_confidence, report.analysis_status);
+}
+
 export function calculateIncidentScore(caseScores: number[] | null | undefined): number {
   if (!caseScores || caseScores.length === 0) return 0;
   const remainingProbability = caseScores.reduce((product, score) => {
@@ -78,13 +88,11 @@ export function independentCaseScores(reports: ScoreableReport[] | null | undefi
   if (!reports || reports.length === 0) return [];
   const bestBySession = new Map<string, number>();
   for (const report of reports) {
-    if (report.withdrawn) continue;
-    const score = finiteNumber(report.case_score);
+    const score = caseScoreFromReport(report);
     if (score == null) continue;
-    const safeScore = Math.max(0, Math.min(1, score));
     const previous = bestBySession.get(report.session_id);
-    if (previous == null || safeScore > previous) {
-      bestBySession.set(report.session_id, safeScore);
+    if (previous == null || score > previous) {
+      bestBySession.set(report.session_id, score);
     }
   }
   return [...bestBySession.values()];

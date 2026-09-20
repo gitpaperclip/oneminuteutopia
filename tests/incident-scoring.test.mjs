@@ -29,33 +29,34 @@ test('traffic light case score is 0.585 and needs two independent reports', () =
   assert.equal(evaluateIncidentForSubmission(two, 'not_ready'), 'ready_to_submit');
 });
 
-test('trash needs about seven strong independent reports', () => {
+test('trash needs about five strong independent reports', () => {
   const caseScore = calculateCaseScore(2, 0.90);
   assertClose(caseScore, 0.19);
   assert.equal(evaluateIncidentForSubmission(caseScore, 'not_ready'), 'not_ready');
 
+  const four = calculateIncidentScore(Array(4).fill(caseScore));
+  assertClose(four, 0.56953279, 1e-8);
+  assert.ok(four < GOVERNMENT_REPORT_THRESHOLD);
+
   const five = calculateIncidentScore(Array(5).fill(caseScore));
   assertClose(five, 0.6513215599, 1e-8);
-  assert.ok(five < GOVERNMENT_REPORT_THRESHOLD);
-
-  const seven = calculateIncidentScore(Array(7).fill(caseScore));
-  assertClose(seven, 0.7712320753, 1e-8);
-  assert.ok(seven >= GOVERNMENT_REPORT_THRESHOLD);
-  assert.equal(evaluateIncidentForSubmission(seven, 'not_ready'), 'ready_to_submit');
+  assert.ok(five >= GOVERNMENT_REPORT_THRESHOLD);
+  assert.equal(evaluateIncidentForSubmission(five, 'not_ready'), 'ready_to_submit');
 });
 
-test('ordinary road damage needs about four independent reports', () => {
+test('ordinary road damage needs about three independent reports', () => {
   const caseScore = calculateCaseScore(3.5, 0.90);
   assertClose(caseScore, 0.3325);
   assert.equal(evaluateIncidentForSubmission(caseScore, 'not_ready'), 'not_ready');
 
+  const two = calculateIncidentScore(Array(2).fill(caseScore));
+  assertClose(two, 0.55444375, 1e-8);
+  assert.ok(two < GOVERNMENT_REPORT_THRESHOLD);
+
   const three = calculateIncidentScore(Array(3).fill(caseScore));
   assertClose(three, 0.703, 0.002);
-  assert.ok(three < GOVERNMENT_REPORT_THRESHOLD);
-
-  const four = calculateIncidentScore(Array(4).fill(caseScore));
-  assertClose(four, 0.802, 0.002);
-  assert.ok(four >= GOVERNMENT_REPORT_THRESHOLD);
+  assert.ok(three >= GOVERNMENT_REPORT_THRESHOLD);
+  assert.equal(evaluateIncidentForSubmission(three, 'not_ready'), 'ready_to_submit');
 });
 
 test('a severe incident can cross the threshold from one report', () => {
@@ -104,4 +105,20 @@ test('already submitted incidents are not marked ready again', () => {
 test('empty incident score is 0', () => {
   assert.equal(calculateIncidentScore([]), 0);
   assert.equal(calculateIncidentScore(null), 0);
+});
+
+test('missing case_score is computed from seriousness and confidence', () => {
+  const incident = recalculateIncident([
+    {
+      session_id: 'reporter',
+      case_score: null,
+      seriousness: 8,
+      ai_confidence: 0.98,
+      analysis_status: 'complete',
+    },
+  ]);
+  assertClose(incident.incident_score, 0.792);
+  assert.equal(incident.report_count, 1);
+  assert.equal(incident.highest_seriousness, 8);
+  assert.equal(incident.government_report_status, 'ready_to_submit');
 });

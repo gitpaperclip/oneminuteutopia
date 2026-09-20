@@ -9,6 +9,7 @@ import {
   fetchIncidents,
   markIncidentFailed,
   markIncidentSubmitted,
+  persistIncidentScores,
 } from './database.ts';
 import { buildMockFormPayload } from './form-payload.ts';
 import { createSerialQueue } from './incident-queue.ts';
@@ -31,21 +32,16 @@ async function submitIncident(
   client: ReturnType<typeof createWorkerClient>,
   incident: WorkerIncident,
 ) {
-  const reason = skipReason(incident);
+  const reports = await fetchIncidentReports(client, incident.id);
+  const scored = await persistIncidentScores(client, incident, reports);
+  const reason = skipReason(scored);
   if (reason) {
-    if (
-      (incident.incident_score != null && incident.incident_score >= 0.75)
-      || incident.government_report_status === 'ready_to_submit'
-      || incident.mock_status === 'failed'
-    ) {
-      console.log(`Incident ${incident.id}: ${reason}. Skipping submission.`);
-    }
+    console.log(`Incident ${scored.id}: ${reason}. Skipping submission.`);
     return;
   }
 
   try {
-    const reports = await fetchIncidentReports(client, incident.id);
-    const route = routeIncident(incident, extraInspectText(reports));
+    const route = routeIncident(scored, extraInspectText(reports));
     if (!route) {
       console.log(
         `Incident ${incident.id}: no mock agency for category ${incident.category}. Skipping submission.`,
