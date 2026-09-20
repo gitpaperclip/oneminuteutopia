@@ -1,250 +1,359 @@
 # One Minute Utopia
 
-One Minute Utopia is a camera-first civic reporting prototype built for HopHacks
-2026. A resident photographs a public issue, receives a server-generated AI
-assessment, confirms the location and details, and saves a durable report. Nearby
-reports of the same issue can be grouped into one stronger community signal.
+<p align="center">
+  <img src="public/logo-full.png" alt="One Minute Utopia" width="420">
+</p>
 
-No account is required. The current project is a Baltimore-focused demonstration;
-it does **not** submit to Baltimore 311, dispatch emergency services, or promise a
-government response.
+<p align="center">
+  <strong>Turn a photo into an actionable civic report in about one minute.</strong>
+</p>
 
-## What the demo does
+<p align="center">
+  <a href="https://oneminuteutopia.vercel.app/"><strong>Launch the live app</strong></a>
+</p>
 
-- Captures a new photo or accepts an existing image.
-- Compresses the image in the browser, then validates and normalizes it again on
-  the server to reduce upload time and model input size.
-- Uses Gemini on Vertex AI to return a broad category, normalized incident type,
-  seriousness, confidence, a short visual summary, and allowlisted context tags.
-- Stores the photo and server-owned analysis in Supabase. Browser-supplied AI
-  scores are never trusted during submission.
-- Routes normalized incident types to Baltimore 311 service candidates or to
-  emergency/manual-review guidance.
-- Creates a durable report receipt and prepares a human-reviewed Baltimore handoff.
-- Groups same-type reports whose GPS accuracy circles overlap (2× reported
-  accuracy, clamped 25–250m) within 72 hours, including through a chain of
-  overlaps, into one "super-report".
-- Shows saved incidents on a public Leaflet/OpenStreetMap map and lets a visitor
-  add one reversible "I see this too" confirmation per browser session.
-- Includes Beacon, an optional local Playwright worker that files score-ready clusters
-  into mock government forms (City 311 or Riverton DOT).
+One Minute Utopia is an AI-assisted civic reporting platform built for HopHacks
+2026. It helps Baltimore residents turn a photo of a neighborhood problem into a
+structured report, find the appropriate official reporting channel, and see when
+nearby residents have documented the same incident.
 
-If AI analysis is unavailable, the photo is retained with an explicit unavailable
-status and the resident can finish a manual report. An unavailable assessment is
-never displayed as zero risk.
+The project focuses on the work between noticing a problem and filing a useful
+report. Residents should not need to know which department owns a fallen tree,
+flooded street, broken signal, illegal dump site, or damaged sidewalk before
+they can take action.
 
-## Reporting flow
+## The problem
 
-1. Take a photo or choose one from the device.
-2. The browser compresses it; the server validates, strips metadata, normalizes,
-   stores, and analyzes it.
-3. Review the suggested issue category and complete the location and optional
-   description.
-4. Submit the report. The server reloads the saved analysis, derives the trusted
-   subtype and routing, and atomically creates or joins an incident.
-5. Open the durable receipt, Baltimore reporting destination, or public map.
+Existing 311 systems make civic reporting possible, but the resident may still
+need to select an unfamiliar service category, write a description, provide a
+location, and decide whether the issue belongs with 311, police, a utility, or
+another agency. That friction can discourage reporting and produce incomplete or
+misrouted requests.
 
-Beacon (`npm run worker`) listens for new rows on
-`public.reports`. When an incident's combined score reaches 0.6, it files that
-cluster to a **mock** government website with Playwright and stores the
-confirmation on the incident. Dangerous issues can file from one strong report;
-minor issues need several independent reporters. Roads, sidewalks, and
-streetlights go to the Riverton DOT mock; other civic issues, including fires,
-go to the City 311 mock. It does not call Baltimore 311.
+Agencies also receive separate reports that may describe the same physical
+incident. Without consistent categories and location-aware grouping, repeated
+reports can become duplicate work instead of stronger community evidence.
 
-The confirm screen still shows a 911 button for fires and similar threats.
-Beacon still files those incidents to the mock portal when the score is high enough.
+One Minute Utopia addresses both sides of that gap:
+
+- AI prepares a structured assessment from one photo.
+- The resident reviews the result and remains in control of the report.
+- A normalized incident taxonomy makes reports comparable.
+- Location-aware clustering groups likely reports of the same incident.
+- Baltimore-specific routing points the resident to the appropriate official
+  destination.
+- Beacon demonstrates how validated incidents could flow into future government
+  reporting integrations.
+
+The supporting research and its limitations are documented in
+[docs/civic-reporting-research.md](docs/civic-reporting-research.md).
+
+## What the app does
+
+- Captures a photo from the camera or accepts an existing image.
+- Compresses and re-encodes the image before analysis.
+- Identifies a broad civic category and a normalized incident type.
+- Produces a short factual description, seriousness score, confidence score, and
+  allowlisted context tags.
+- Adds time and location context with a manual location fallback.
+- Lets the resident correct the category and add details before saving.
+- Creates a durable report receipt backed by server-owned data.
+- Routes the report to Baltimore 311, BPD, BGE, or emergency guidance as
+  appropriate.
+- Groups nearby reports that appear to describe the same incident into a
+  super-report.
+- Displays public incidents on an interactive map.
+- Lets a browser session add or remove an independent “I see this too”
+  confirmation.
+- Sends score-ready incidents to Beacon for a safe mock form-filing
+  demonstration.
+
+No account is required for the current prototype.
+
+## End-to-end workflow
+
+### 1. Capture
+
+The resident takes a photo or selects one from the device. Browser-side image
+processing corrects orientation, limits the longest edge to 1,600 pixels,
+converts the image to JPEG, removes embedded metadata through re-encoding, and
+keeps the upload under 3 MB.
+
+### 2. Validate and normalize
+
+The Next.js upload route checks the request origin, content type, body size, and
+session rate limit. Sharp decodes the image again on the server, verifies that it
+is a real supported image, strips metadata, and produces a normalized JPEG. The
+server never trusts the filename or browser MIME type alone.
+
+### 3. Store and analyze
+
+The normalized photo is written to Supabase Storage while the server sends the
+image to Gemini 3.8 Flash through Google Cloud Vertex AI. The model returns a
+constrained structured response containing:
+
+- broad category;
+- normalized incident type;
+- seriousness from 0 to 10, or null when unavailable;
+- AI confidence from 0 to 100;
+- a short visual context summary;
+- preset context tags.
+
+The provider schema limits the response shape, and a stricter application
+validator checks every field against the app's taxonomy before persistence.
+Vertex rate limits receive bounded retries within one request deadline.
+
+### 4. Persist the assessment
+
+The server stores the analysis in `public.image_analyses` with the session,
+image path, image hash, model, prompt version, and analysis status. The browser
+receives an analysis ID, but it cannot replace the saved AI scores or invent a
+trusted assessment.
+
+If the AI provider is unavailable, the app records an explicit unavailable
+state and allows the resident to complete a manual report. Missing analysis is
+kept distinct from a zero-risk assessment.
+
+### 5. Review
+
+The resident sees the photo and a readable summary, confirms or changes the
+category, supplies the issue location, and can add optional details. The
+interface keeps internal scoring data out of the primary resident flow.
+
+### 6. Save and cluster
+
+Submission reloads the session-owned analysis from the database and creates the
+report in a transaction. Repeating the same submission returns the existing
+report instead of creating another.
+
+Reports are compared using normalized incident type, time, and location. Two
+reports can join the same incident when:
+
+- they have the same normalized incident type;
+- they were reported within a 72-hour window; and
+- their GPS accuracy circles overlap.
+
+Each accuracy circle uses twice the device-reported accuracy, clamped between 25
+and 250 meters. Overlap is transitive, so a connected set of matching reports
+can be consolidated into one incident. An incident with at least two independent
+reports is displayed as a super-report.
+
+### 7. Route and present
+
+The receipt presents the appropriate next action:
+
+- routine Baltimore issues link to the official BALT311 intake;
+- eligible non-emergency police reports link to BPD's reporting portal;
+- utility hazards link to BGE;
+- immediate threats lead with 911 guidance;
+- uncertain or unavailable classifications retain a manual reporting path.
+
+The public map uses aggregate incident data rather than exposing browser session
+identifiers. Residents can filter the map, inspect evidence, and contribute a
+separate “I see this too” confirmation without creating another photo report.
+
+### 8. Demonstrate future handoff with Beacon
+
+Beacon is the project's autonomous reporting-agent prototype. It listens for new
+report rows through Supabase Realtime, reloads the complete incident, recalculates
+its readiness, selects a mock agency, and uses Playwright to complete the
+corresponding form.
+
+Beacon currently targets two allowlisted demonstration sites:
+
+- a mock City 311 portal for general civic issues;
+- a mock transportation portal for road, sidewalk, signal, and streetlight
+  issues.
+
+After a successful mock submission, Beacon stores the mock agency and reference
+ID so the same incident is not filed again. It never automates the live Baltimore
+portal.
+
+## Incident scoring and Beacon readiness
+
+Each completed AI assessment receives a server-side case score derived from
+seriousness and confidence:
+
+```text
+case score = (seriousness / 10) × (0.5 + 0.5 × confidence)
+```
+
+Confidence is normalized to the range 0 to 1. Unavailable analyses receive no
+positive score. When several independent sessions report the same incident,
+their evidence combines as:
+
+```text
+incident score = 1 - ∏(1 - independent case score)
+```
+
+Only the strongest report from each anonymous session contributes, preventing
+one browser session from inflating the score by repeatedly submitting the same
+issue. An incident becomes ready for the Beacon demonstration at a score of
+0.60, with coordinates and an open incident status. This allows one serious,
+high-confidence hazard to cross the threshold while requiring more independent
+evidence for lower-scoring conditions.
+
+This is a hackathon decision model, not a calibrated public-safety standard.
+Emergency guidance never waits for the Beacon threshold.
 
 ## Architecture
 
-- **Web:** Next.js 16 App Router, React 19, TypeScript, Tailwind CSS 4
-- **AI:** Gemini 3.8 Flash through Google Cloud Vertex AI, called only by the server
-- **Data:** Supabase Postgres for sessions, analyses, reports, incidents, routing,
-  confirmations, scoring, and mock filing status
-- **Images:** Supabase Storage with client and server image normalization
-- **Map:** Leaflet with public OpenStreetMap raster tiles
-- **Demo automation:** Beacon, a local Playwright worker for the mock government website
-
-The AI response uses a constrained provider schema and a stricter server validator.
-The request has an 18-second deadline and retries Vertex HTTP 429 responses with
-bounded exponential jitter. A provider failure falls back to manual reporting.
-
-## Baltimore scope and limitations
-
-The backend has a normalized incident taxonomy and maps each subtype to observed
-Baltimore 311 service types. `GET /api/reports/{id}/prepare-311` builds a preview
-packet and applies emergency guardrails. It is **prepare-only**: it does not prove
-that Baltimore accepted a service request.
-
-The Baltimore mobile app and authenticated intake do not expose a public write API
-that this prototype can safely call. The UI therefore links residents to the
-appropriate official destination and keeps the user responsible for reviewing and
-submitting the city form. The Playwright worker targets only the mock demo sites;
-its reference number is not a Baltimore case number.
-
-The overlapping-circle / 72-hour grouping values are hackathon defaults. A
-production system would tune them by incident type, add moderation and retention
-policies, geocode manually entered addresses, and establish a formal city
-integration.
-
-**Hard constraint:** The app does NOT call live Baltimore 311 APIs. All 311
-integration is prepare-only (packet generation, form preview, link generation).
-Users must manually confirm and submit through the city's portal. Never claim
-"submitted" to any government system — a link opened or form displayed is NOT
-proof of city acceptance. The Playwright worker files only to the mock
-government demo sites (City 311 and Riverton DOT).
-
-See [docs/incident-intelligence.md](docs/incident-intelligence.md),
-[docs/baltimore-reporting-catalog.md](docs/baltimore-reporting-catalog.md), and
-[docs/map.md](docs/map.md) for the detailed contracts. The project's problem
-research, evidence, and validation limits are documented in
-[docs/civic-reporting-research.md](docs/civic-reporting-research.md).
-
-## Local setup
-
-Use Node.js 22 or newer.
-
-```sh
-npm ci
-cp .env.example .env.local
+```mermaid
+flowchart TD
+    A[Resident camera or gallery] --> B[Browser image preparation]
+    B --> C[Next.js upload API on Vercel]
+    C --> D[Sharp server normalization]
+    D --> E[Supabase Storage]
+    D --> F[Gemini on Vertex AI]
+    F --> G[Strict response validation]
+    E --> H[Saved image analysis]
+    G --> H
+    H --> I[Resident review]
+    I --> J[Transactional report submission]
+    J --> K[Supabase Postgres]
+    K --> L[Incident clustering and scoring]
+    L --> M[Receipt and Baltimore handoff]
+    L --> N[Leaflet public incident map]
+    K --> O[Supabase Realtime]
+    O --> P[Beacon worker]
+    P --> Q[Playwright]
+    Q --> R[Allowlisted mock agency forms]
 ```
 
-In PowerShell, use `Copy-Item .env.example .env.local` for the second command.
+### Core data model
 
-Configure:
+- **sessions:** anonymous first-party session ownership;
+- **image_analyses:** server-owned AI output and image references;
+- **reports:** confirmed resident submissions;
+- **incidents:** grouped reports, aggregate context, and scoring state;
+- **incident_confirmations:** reversible “I see this too” signals;
+- **request_limits:** persistent upload and submission limits;
+- **routing and mock filing fields:** Baltimore candidates, readiness,
+  mock-agency state, and mock confirmation IDs.
 
-- `DATABASE_URL`: Supabase transaction-pooler Postgres URL. URL-encode reserved
-  characters in the password.
-- `NEXT_PUBLIC_SUPABASE_URL`: URL for the same Supabase project.
-- `SUPABASE_SERVICE_ROLE_KEY`: server-only service-role key for that project.
-- `GOOGLE_CLOUD_PROJECT`: Google Cloud project with Vertex AI enabled.
-- `GOOGLE_CLOUD_LOCATION`: use `global` for the current Gemini 3.8 deployment.
-- `GOOGLE_SERVICE_ACCOUNT_JSON`: the complete service-account JSON object as a
-  server-only environment value. For local development, a file path in
-  `GOOGLE_APPLICATION_CREDENTIALS` is also supported.
-- `GEMINI_MODEL`: optional model override; the current default is
-  `gemini-3.8-flash`.
+Database migrations enable row-level security. Public browser roles do not read
+the internal reporting tables directly; API routes perform server-side access
+with validated inputs.
 
-`GEMINI_API_KEY` belongs to the older Gemini Developer API setup and is not used by
-the current Vertex AI implementation. Never expose service-account JSON or the
-Supabase service-role key through a `NEXT_PUBLIC_*` variable or commit them.
+## Complete technology stack
 
-Apply every SQL migration in `supabase/migrations/` in filename order. Then create
-a public-read Supabase Storage bucket named `report-photos`. The bucket is written
-with the server credential; anyone with a photo URL can open it.
+| Layer | Technologies |
+| --- | --- |
+| Web application | Next.js 16 App Router, React 19, TypeScript 5 |
+| Interface and styling | Tailwind CSS 4, responsive camera-first UI |
+| Browser capabilities | MediaDevices camera access, Canvas image processing, Geolocation API, anonymous cookies |
+| Server APIs | Next.js Route Handlers on the Node.js runtime |
+| Hosting and deployment | Vercel production deployment and serverless functions |
+| AI vision | Gemini 3.8 Flash through Google Cloud Vertex AI |
+| AI contract | Vertex structured-output schema plus application-level validation |
+| Image pipeline | Browser Canvas, Sharp, JPEG normalization, metadata stripping |
+| Database | Supabase Postgres, SQL migrations, transactions, row-level security |
+| Object storage | Supabase Storage |
+| Events | Supabase Realtime |
+| Database clients | `@supabase/supabase-js` and `postgres.js` |
+| Mapping | Leaflet, React Leaflet, OpenStreetMap raster tiles |
+| Automation | Beacon Node.js/TypeScript worker, `tsx`, Playwright, Chromium |
+| Testing | Node test runner, PGlite embedded Postgres, mocked external services |
+| Code quality | TypeScript compiler, ESLint, Next.js production builds |
+| Source and delivery | Git, GitHub branches and pull requests, Vercel deployment |
 
-```sh
-npm run dev
-```
+## Agentic development workflow
 
-Open `http://localhost:3000`. Camera and location permissions require HTTPS on a
-physical phone, so use the deployed site or an HTTPS development tunnel. File
-upload and manual location entry are available when permissions are denied.
+The team used an agentic engineering workflow to build and debug the project
+during the hackathon:
 
-### Optional Beacon mock filing worker
+- **Grok Bot and Cursor Agents** ran a coordinated four-role workflow for primary
+  implementation, code review, quality assurance, and UI polish.
+- Those roles delegated bounded tasks to additional agents, compared findings,
+  and handed reviewed changes back for integration.
+- **Codex** supported architecture review, backend algorithms, repository-wide
+  debugging, tests, and focused implementation work.
+- **Gemini** supported development research while Gemini on Vertex AI powers the
+  app's production image analysis.
+- The human team selected the product direction, reviewed the generated work,
+  resolved integration decisions, configured cloud services, performed live
+  testing, and controlled what reached the repository.
 
-Beacon runs locally and does not run on Vercel:
+This workflow was especially useful for isolating failures across Vertex AI,
+Supabase, Vercel, the browser camera flow, and Beacon while parallelizing review
+and verification.
 
-```sh
-npx playwright install chromium
-npm run worker
-```
+## Public API surface
 
-It reads the same `.env.local` as the app. On startup it checks existing
-incidents once, then waits for new `public.reports` inserts instead of polling
-every 10 seconds. A visible browser opens for incidents whose
-incident score is at least 0.6 and that have not already been filed, including
-fires and other high-danger reports. Road and
-streetlight clusters open the transportation mock; litter and other civic issues
-open the general 311 mock. Apply `202609190007_reports_realtime.sql` so Supabase
-Realtime publishes `reports`. `MOCK_GOVERNMENT_URL` and
-`MOCK_TRANSPORTATION_URL` must use an allowlisted hostname (`localhost`,
-`127.0.0.1`, `mock-government-page-without-api.vercel.app`, or
-`mock-second-gov-site-transportation.vercel.app`). Beacon refuses to start
-or submit if a mock portal URL is missing or not allowlisted. Live city URLs
-are not permitted.
+| Route | Purpose |
+| --- | --- |
+| `POST /api/upload` | Validate, normalize, store, analyze, and persist a photo |
+| `POST /api/submit` | Save the reviewed report and create or join an incident |
+| `GET /api/reports/:id/prepare-311` | Build a session-owned Baltimore handoff packet |
+| `GET /api/incidents` | Return filtered, map-safe aggregate incidents |
+| `POST /api/incidents/:id/confirmation` | Add an “I see this too” confirmation |
+| `DELETE /api/incidents/:id/confirmation` | Remove that session's confirmation |
+| `GET /api/baltimore-311/services` | Expose the normalized Baltimore service catalog |
+| `GET /api/health` | Check database schema and service configuration |
 
-## Verification
+## Baltimore scope
 
-```sh
-npm run test:analysis
-npm run lint
-npm run typecheck
-npm run build
-```
+The current prototype is designed around Baltimore's reporting ecosystem. Its
+internal taxonomy maps observable issues to Baltimore 311 service candidates,
+official department information, BPD reporting, BGE reporting, or emergency
+guidance. The app prepares the resident for the correct next step and links to
+official destinations.
 
-`GET /api/health` verifies the database schema, storage configuration, and presence
-of Vertex configuration. It does not make a billable model request, upload a photo,
-or complete a report. Validate the deployed system with the real reporting flow.
+One Minute Utopia does **not** claim to submit reports to Baltimore City. The
+current BALT311 intake does not provide this prototype with a public write
+integration suitable for automated filing. The resident reviews and completes
+the official submission. Beacon demonstrates the future automation concept only
+against mock government websites.
 
-Before a demo, verify:
+## Safety, privacy, and limitations
 
-1. Two consecutive photos return a completed AI assessment.
-2. A report survives a receipt refresh.
-3. Two nearby reports of the same type join one super-report.
-4. The incident appears on `/map` and "I see this too" can be added and removed.
-5. Emergency imagery shows 911-first guidance.
-6. Beacon runs locally if mock filing is part of the presentation.
+- Call 911 for an active fire, serious injury, violence, or another immediate
+  threat. The app is not an emergency dispatch system.
+- AI output is a preliminary assessment and may be wrong. The resident can
+  correct the category before saving.
+- The seriousness score and Beacon threshold are prototype heuristics rather
+  than validated safety or agency policy.
+- Grouping is based on category, time, and approximate GPS overlap. It can miss
+  related reports or group reports incorrectly.
+- The public map may expose a report photo, description, address, and precise
+  coordinates. Demo submissions should use consented public-space images and
+  avoid faces, license plates, home interiors, medical information, or other
+  identifying content.
+- Re-encoding strips embedded metadata but cannot remove identifying content
+  visible inside the photo.
+- A production deployment would require formal city partnerships, moderation,
+  retention and deletion policies, accessibility and resident testing, tuned
+  incident-grouping rules, and stronger identity and abuse controls.
 
-Automated tests mock external services. Passing them confirms the application
-contracts, not deployed credentials, quotas, migrations, or phone permissions.
-
-## Public data and privacy
-
-The demo map can expose a report photo, issue details, address, and precise
-coordinates. Use consented public-space images and avoid faces, license plates,
-home interiors, medical information, and other identifying details. The server
-normalizes images and strips metadata, but the visible content of the photo still
-matters. A production deployment needs clear consent, moderation, deletion, and
-retention controls.
-
-## Project layout
+## Repository guide
 
 ```text
-app/page.tsx                              Capture, review, and report submission
-app/map/page.tsx                          Public incident map
-app/receipt/[id]/page.tsx                 Durable receipt and Baltimore handoff
-app/api/upload/route.ts                   Normalize, store, analyze, and persist
-app/api/submit/route.ts                   Authoritative report and clustering
-app/api/reports/[id]/prepare-311/route.ts Prepared Baltimore handoff packet
-app/api/incidents/route.ts                Map-safe incident list and detail
-app/api/incidents/[id]/confirmation/      I-see-this-too state
-app/api/health/route.ts                   Schema and configuration health
-lib/gemini.ts                             Vertex AI request, validation, and retry
-lib/hazard-analysis.mjs                   Prompt and strict response contract
-lib/incident-taxonomy.mjs                 Normalized issue taxonomy
-lib/incident-scoring.ts                   Case score, incident score, and filing threshold
-lib/baltimore-311-routing.mjs             Baltimore service-type mapping
-lib/db.ts                                 Transactions, clustering, and persistence
-worker/src/index.ts                       Run Beacon: listen for reports and file the matching mock form
-worker/src/agency-route.ts                Choose Riverton DOT vs City 311 from category
-supabase/migrations/                      Database setup in execution order
-tests/                                    Contract and regression tests
+app/                         Next.js pages and API routes
+components/                  Analysis, instructions, and map UI
+lib/gemini.ts                Vertex AI request, retry, and validation
+lib/image-*.ts               Browser and server image processing
+lib/incident-*.ts            Taxonomy, clustering, scoring, and map contracts
+lib/baltimore-*.ts           Baltimore service catalog and routing
+lib/db.ts                    Persistence, transactions, and incident grouping
+worker/                      Beacon Realtime and Playwright worker
+supabase/migrations/         Database schema and upgrades
+tests/                       Unit, integration, persistence, and contract tests
+docs/                        Research and detailed subsystem documentation
 ```
 
-## Troubleshooting
+Detailed documentation:
 
-- **Photo cannot be saved:** verify the `report-photos` bucket, Supabase URL and
-  service-role key, database connection, and applied migrations. Check the matching
-  `/api/upload` runtime log in Vercel.
-- **AI analysis is unavailable:** inspect the structured
-  `image_analysis_unavailable` log entry. `rate_limited`/429 means Vertex quota or
-  shared capacity; retry after a short delay. `credentials` means the service
-  account or Vertex permissions are wrong. `model_unavailable` means the selected
-  model is unavailable in the configured project/location.
-- **Vertex model returns 404:** keep `GOOGLE_CLOUD_LOCATION=global` for the current
-  model and confirm the production deployment uses the expected `GEMINI_MODEL`.
-- **Map is empty:** submit a report with GPS coordinates, apply the clustering and
-  confirmation migrations, and inspect `GET /api/incidents`.
-- **Camera or location is denied:** use file upload and manual location entry. GPS
-  clustering and default map placement require coordinates.
-- **Beacon never opens a browser:** apply
-  `202609190004_mock_government_submission.sql` through
-  `202609190008_incident_scoring.sql`, confirm the incident score is at least
-  0.6 (`government_report_status` is `ready_to_submit`), apply
-  `202609190007_reports_realtime.sql`, and run `npx playwright install chromium`.
-  Already-filed incidents are skipped on purpose.
+- [Civic reporting research](docs/civic-reporting-research.md)
+- [Image analysis pipeline](docs/image-analysis.md)
+- [Incident intelligence and Beacon](docs/incident-intelligence.md)
+- [Baltimore reporting catalog](docs/baltimore-reporting-catalog.md)
+- [Public map architecture](docs/map.md)
 
-## License
+## Built for HopHacks 2026
 
-MIT
+One Minute Utopia was created for the HopHacks philanthropy track as the team's
+first hackathon project. It demonstrates a resident-facing reporting experience,
+a full AI and data pipeline, community incident aggregation, Baltimore-specific
+routing, and a forward-compatible path toward agency-integrated civic reporting.
+
+**[Experience One Minute Utopia](https://oneminuteutopia.vercel.app/)**
