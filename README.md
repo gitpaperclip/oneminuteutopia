@@ -19,7 +19,7 @@ government response.
 - Stores the photo and server-owned analysis in Supabase. Browser-supplied AI
   scores are never trusted during submission.
 - Routes normalized incident types to Baltimore 311 service candidates or to
-  emergency/manual-review guidance.
+  emergency/manual-review guidance. (Backend actually generates a Baltimore311 API-ready form submission call)
 - Creates a durable report receipt and prepares a human-reviewed Baltimore handoff.
 - Groups same-type reports whose GPS accuracy circles overlap (2× reported
   accuracy, clamped 25–250m) within 72 hours, including through a chain of
@@ -27,7 +27,7 @@ government response.
 - Shows saved incidents on a public Leaflet/OpenStreetMap map and lets a visitor
   add one reversible "I see this too" confirmation per browser session.
 - Includes Beacon, an optional local Playwright worker that files score-ready clusters
-  into mock government forms (City 311 or Riverton DOT).
+  into mock government forms (mock forms for Baltimore public departments).
 
 If AI analysis is unavailable, the photo is retained with an explicit unavailable
 status and the resident can finish a manual report. An unavailable assessment is
