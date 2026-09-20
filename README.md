@@ -96,7 +96,9 @@ government demo sites (City 311 and Riverton DOT).
 
 See [docs/incident-intelligence.md](docs/incident-intelligence.md),
 [docs/baltimore-reporting-catalog.md](docs/baltimore-reporting-catalog.md), and
-[docs/map.md](docs/map.md) for the detailed contracts.
+[docs/map.md](docs/map.md) for the detailed contracts. The project's problem
+research, evidence, and validation limits are documented in
+[docs/civic-reporting-research.md](docs/civic-reporting-research.md).
 
 ## Local setup
 
