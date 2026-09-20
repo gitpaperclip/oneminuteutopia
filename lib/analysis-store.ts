@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { PROMPT_VERSION, validateAnalysis } from './hazard-analysis.mjs';
 import { normalizedTags } from './incident-taxonomy.mjs';
 import { baltimoreRouteForIncidentType } from './baltimore-311-routing.mjs';
+import { caseScoreFromAnalysis } from './incident-scoring.ts';
 import type { AnalysisResult } from './gemini';
 
 export interface SavedAnalysis extends AnalysisResult {
@@ -18,6 +19,7 @@ export interface SavedAnalysis extends AnalysisResult {
   model: string;
   report_id: string | null;
   analysis_status: 'complete' | 'unavailable';
+  case_score?: number | null;
 }
 
 export class AnalysisStorageError extends Error {
@@ -70,15 +72,27 @@ export class AnalysisStore {
     const tags = normalizedTags(data.incident_type, data.context_tags);
     const route = baltimoreRouteForIncidentType(data.incident_type);
     if (!route) throw new Error('Analysis incident type has no Baltimore routing contract');
+    const case_score = caseScoreFromAnalysis(data.seriousness, data.ai_confidence, data.analysis_status);
     const id = crypto.randomUUID();
     const [saved] = await this.request('?on_conflict=id', {
       method: 'POST', body: JSON.stringify({
-        id, ...data, tags, prompt_version: PROMPT_VERSION,
+        id, ...data, tags, prompt_version: PROMPT_VERSION, case_score,
         baltimore_service_candidates: route.service_types,
         routing_disposition: route.disposition,
       }),
     }, true);
     if (!saved?.id) throw new Error('Analysis was not saved');
+    if (saved.case_score == null && Number.isFinite(case_score)) {
+      try {
+        const [patched] = await this.request(`?id=eq.${encodeURIComponent(saved.id)}`, {
+          method: 'PATCH', body: JSON.stringify({ case_score }),
+        });
+        if (patched?.id) return patched;
+      } catch {
+        saved.case_score = case_score;
+      }
+      saved.case_score = case_score;
+    }
     return saved;
   }
 

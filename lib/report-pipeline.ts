@@ -3,6 +3,7 @@ import { GeminiService, GeminiAnalysisError } from './gemini.ts';
 import { AnalysisStore, AnalysisStorageError } from './analysis-store.ts';
 import { StorageService } from './storage.ts';
 import type { AnalysisResult } from './gemini.ts';
+import { caseScoreFromAnalysis } from './incident-scoring.ts';
 
 const dependencies = { gemini: GeminiService, analyses: AnalysisStore, storage: StorageService };
 
@@ -57,6 +58,8 @@ export async function prepareReport(buffer: Buffer, sessionId: string, services 
       context_summary: saved.context_summary, context_tags: saved.context_tags,
       tags: saved.tags, baltimore_service_candidates: saved.baltimore_service_candidates,
       routing_disposition: saved.routing_disposition,
+      case_score: saved.case_score
+        ?? caseScoreFromAnalysis(saved.seriousness, saved.ai_confidence, analysis_status),
     },
     analysis_status, processing_ms: Math.round(performance.now() - started),
     ...(!complete ? { warning: 'AI analysis is unavailable. Choose the issue category to continue with a manual report.' } : {}),

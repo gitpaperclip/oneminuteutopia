@@ -31,7 +31,7 @@ interface UploadResult {
   analysis_id: string;
   analysis_status: 'complete' | 'unavailable';
   warning?: string;
-  analysis: { category: string; seriousness: number | null; ai_confidence: number };
+  analysis: { category: string; seriousness: number | null; ai_confidence: number; case_score?: number | null };
 }
 
 interface GpsFix {
@@ -583,6 +583,7 @@ export default function HomePage() {
               <AnalysisCard
                 category={upload.analysis.category}
                 seriousness={upload.analysis.seriousness}
+                case_score={upload.analysis.case_score}
                 onContinue={() => {
                   setError(null);
                   setLeaveOpen(false);

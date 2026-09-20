@@ -18,6 +18,9 @@ const migrations = await Promise.all([
   '202609190003_baltimore_311_routing.sql',
   '202609190004_mock_government_submission.sql',
   '202609190005_incident_confirmations.sql',
+  '202609190006_mock_agency.sql',
+  '202609190007_reports_realtime.sql',
+  '202609190008_incident_scoring.sql',
 ].map(name => readFile(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8')));
 
 const MAP_INCIDENT_KEYS = [
