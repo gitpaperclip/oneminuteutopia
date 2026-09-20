@@ -44,9 +44,9 @@ export function validateReportInput(value: unknown): ReportInput {
   return {
     analysis_id: body.analysis_id, category: body.category,
     user_description: text('user_description', 2000),
-    // A manually corrected address must not keep coordinates from a previous GPS fix.
-    latitude: body.location_source === 'gps' ? latitude : null,
-    longitude: body.location_source === 'gps' ? longitude : null,
+    // Manual coordinates come from a selected Baltimore City geocoder result.
+    latitude,
+    longitude,
     location_accuracy: body.location_source === 'gps' ? location_accuracy : null,
     location_source: body.location_source, location_address,
   };

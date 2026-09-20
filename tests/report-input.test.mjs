@@ -6,8 +6,11 @@ import { validateReportInput } from '../lib/report-input.ts';
 import { readLimitedBody, checkRequestOrigin } from '../lib/request-body.ts';
 
 const valid = { analysis_id: '11111111-1111-4111-8111-111111111111', category: 'other_hazard', location_source: 'manual', location_address: 'Main Street' };
-test('invalid report fields are rejected and manual corrections drop stale GPS', () => {
-  assert.equal(validateReportInput({ ...valid, latitude: 4, longitude: 5, location_accuracy: 10 }).latitude, null);
+test('invalid report fields are rejected and resolved manual coordinates are preserved', () => {
+  const manual = validateReportInput({ ...valid, latitude: 39.29, longitude: -76.61, location_accuracy: 10 });
+  assert.equal(manual.latitude, 39.29);
+  assert.equal(manual.longitude, -76.61);
+  assert.equal(manual.location_accuracy, null);
   for (const update of [{ category: 'unknown' }, { category: 'unable_to_assess' }, { analysis_id: 'forged' }, { latitude: NaN, longitude: 1 }, { latitude: 91, longitude: 1 }, { latitude: 1 }, { location_address: '' }, { user_description: 'a'.repeat(2001) }, { location_accuracy: -1 }, { location_source: 'photo' }]) {
     assert.throws(() => validateReportInput({ ...valid, ...update }));
   }

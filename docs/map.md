@@ -7,6 +7,12 @@ Architecture:
 The basemap is public OSM raster tiles. No `NEXT_PUBLIC_MAP_STYLE_URL` or
 MapLibre style is required. Private tokens stay off `NEXT_PUBLIC_*`.
 
+When GPS is unavailable or denied, the report form queries Baltimore City's
+public EGIS composite locator through `GET /api/location/suggest`. Selecting a
+result saves its latitude and longitude with the manual address, which lets the
+incident participate in map display and distance-based grouping. This service
+does not require an application API key.
+
 ## Truncation
 
 `GET /api/incidents` still caps at 100 rows. The handler fetches `limit + 1`
