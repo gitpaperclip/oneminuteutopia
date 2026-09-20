@@ -40,6 +40,12 @@ interface GpsFix {
   accuracy: number;
 }
 
+interface AddressSuggestion {
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
 function stopTracks(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
 }
@@ -102,6 +108,10 @@ export default function HomePage() {
   const [note, setNote] = useState('');
   const [gps, setGps] = useState<GpsFix | null>(null);
   const [address, setAddress] = useState('');
+  const [manualLocation, setManualLocation] = useState<AddressSuggestion | null>(null);
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [addressBusy, setAddressBusy] = useState(false);
+  const [addressError, setAddressError] = useState<string | null>(null);
   const [locMode, setLocMode] = useState<'gps' | 'manual'>('gps');
   const [locBusy, setLocBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -110,6 +120,37 @@ export default function HomePage() {
 
   const reviewing = capturePhase === 'reviewing';
   const processing = capturePhase === 'processing';
+
+  useEffect(() => {
+    const query = address.trim();
+    if (locMode !== 'manual' || query.length < 3 || manualLocation?.address === query) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setAddressBusy(true);
+      try {
+        const response = await fetch(`/api/location/suggest?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        });
+        const data = await response.json() as {
+          suggestions?: AddressSuggestion[];
+          error?: string;
+        };
+        if (!response.ok) throw new Error(data.error || 'Address suggestions are unavailable.');
+        setAddressSuggestions(Array.isArray(data.suggestions) ? data.suggestions : []);
+        setAddressError(null);
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        setAddressSuggestions([]);
+        setAddressError(cause instanceof Error ? cause.message : 'Address suggestions are unavailable.');
+      } finally {
+        if (!controller.signal.aborted) setAddressBusy(false);
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [address, locMode, manualLocation?.address]);
 
   const killCamera = useCallback(() => {
     stopTracks(streamRef.current);
@@ -369,6 +410,10 @@ export default function HomePage() {
     setNote('');
     setGps(null);
     setAddress('');
+    setManualLocation(null);
+    setAddressSuggestions([]);
+    setAddressBusy(false);
+    setAddressError(null);
     setLocMode('gps');
     setLocBusy(false);
     setSubmitting(false);
@@ -394,7 +439,7 @@ export default function HomePage() {
     !!upload &&
     !!category &&
     category !== 'unable_to_assess' &&
-    (locMode === 'gps' ? !!gps : address.trim().length > 0);
+    (locMode === 'gps' ? !!gps : !!manualLocation);
 
   const reporting = upload ? agencyReportingCopy(upload.analysis.category) : null;
   const emergency =
@@ -404,8 +449,8 @@ export default function HomePage() {
     if (!upload || !canSubmit || submitting) return;
     setSubmitting(true);
     setError(null);
-    const lat = locMode === 'gps' ? gps!.latitude : null;
-    const lng = locMode === 'gps' ? gps!.longitude : null;
+    const lat = locMode === 'gps' ? gps!.latitude : manualLocation!.latitude;
+    const lng = locMode === 'gps' ? gps!.longitude : manualLocation!.longitude;
     void groupKeyFromReport({ category, lat, lng, createdAt: Date.now() });
     try {
       const res = await fetch('/api/submit', {
@@ -648,7 +693,14 @@ export default function HomePage() {
                 {locMode === 'gps' && gps ? (
                   <div className="loc-row">
                     <p className="loc-gps">GPS ±{Math.round(gps.accuracy)}m</p>
-                    <button type="button" className="text-btn" onClick={() => setLocMode('manual')}>
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => {
+                        setLocMode('manual');
+                        setAddressError(null);
+                      }}
+                    >
                       Address
                     </button>
                     <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
@@ -656,17 +708,60 @@ export default function HomePage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="loc-row">
-                    <input
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Short address"
-                      maxLength={200}
-                      autoComplete="street-address"
-                    />
-                    <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
-                      {locBusy ? '…' : 'GPS'}
-                    </button>
+                  <div className="location-entry">
+                    <div className="loc-row">
+                      <input
+                        value={address}
+                        onChange={(event) => {
+                          setAddress(event.target.value);
+                          setManualLocation(null);
+                          setAddressSuggestions([]);
+                          setAddressBusy(false);
+                          setAddressError(null);
+                        }}
+                        placeholder="Baltimore address or landmark"
+                        maxLength={200}
+                        autoComplete="street-address"
+                        role="combobox"
+                        aria-label="Baltimore address or landmark"
+                        aria-autocomplete="list"
+                        aria-expanded={addressSuggestions.length > 0}
+                        aria-controls="location-suggestions"
+                      />
+                      <button type="button" className="text-btn" disabled={locBusy} onClick={requestGps}>
+                        {locBusy ? '…' : 'GPS'}
+                      </button>
+                    </div>
+                    {addressBusy ? <p className="location-hint">Finding Baltimore locations…</p> : null}
+                    {addressSuggestions.length > 0 ? (
+                      <ul className="location-suggestions" id="location-suggestions" role="listbox">
+                        {addressSuggestions.map((suggestion) => (
+                          <li key={`${suggestion.address}-${suggestion.latitude}-${suggestion.longitude}`}>
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={manualLocation?.address === suggestion.address}
+                              onClick={() => {
+                                setAddress(suggestion.address);
+                                setManualLocation(suggestion);
+                                setAddressSuggestions([]);
+                                setAddressError(null);
+                              }}
+                            >
+                              <span className="location-suggestion-pin" aria-hidden="true">●</span>
+                              <span>{suggestion.address}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {manualLocation ? (
+                      <p className="location-match">Location selected for the incident map</p>
+                    ) : addressError ? (
+                      <p className="location-hint location-hint-error">{addressError}</p>
+                    ) : address.trim().length >= 3 && !addressBusy ? (
+                      <p className="location-hint">Select a result to place this report on the map.</p>
+                    ) : null}
                   </div>
                 )}
               </div>
