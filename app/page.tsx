@@ -103,6 +103,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraDenied, setCameraDenied] = useState(false);
+  const [cameraPlaybackBlocked, setCameraPlaybackBlocked] = useState(false);
 
   const [category, setCategory] = useState('');
   const [note, setNote] = useState('');
@@ -157,6 +158,25 @@ export default function HomePage() {
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setCameraOn(false);
+    setCameraPlaybackBlocked(false);
+  }, []);
+
+  const playCamera = useCallback(async (stream = streamRef.current) => {
+    const video = videoRef.current;
+    if (!video || !stream) return;
+    if (video.srcObject !== stream) video.srcObject = stream;
+    video.autoplay = true;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    try {
+      await video.play();
+      setCameraPlaybackBlocked(false);
+    } catch {
+      setCameraPlaybackBlocked(true);
+    }
   }, []);
 
   const replacePreview = useCallback((url: string | null) => {
@@ -213,14 +233,16 @@ export default function HomePage() {
       setError(null);
       setCameraDenied(false);
       setCameraOn(true);
+      void playCamera(stream);
     } catch {
       stopTracks(streamRef.current);
       streamRef.current = null;
       if (videoRef.current) videoRef.current.srcObject = null;
       setCameraOn(false);
       setCameraDenied(true);
+      setCameraPlaybackBlocked(false);
     }
-  }, []);
+  }, [playCamera]);
 
   const shouldStartCamera =
     step === 'capture' && capturePhase === 'live' && !cameraOn && !preview && !cameraDenied;
@@ -234,12 +256,22 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!cameraOn || step !== 'capture') return;
-    const video = videoRef.current;
-    const stream = streamRef.current;
-    if (!video || !stream) return;
-    if (video.srcObject !== stream) video.srcObject = stream;
-    if (!preview) void video.play().catch(() => undefined);
-  }, [cameraOn, preview, step]);
+    const playbackFrame = !preview && capturePhase === 'live'
+      ? window.requestAnimationFrame(() => void playCamera())
+      : null;
+    const resumeCamera = () => {
+      if (document.visibilityState === 'visible' && !preview && capturePhase === 'live') {
+        void playCamera();
+      }
+    };
+    document.addEventListener('visibilitychange', resumeCamera);
+    window.addEventListener('pageshow', resumeCamera);
+    return () => {
+      if (playbackFrame !== null) window.cancelAnimationFrame(playbackFrame);
+      document.removeEventListener('visibilitychange', resumeCamera);
+      window.removeEventListener('pageshow', resumeCamera);
+    };
+  }, [cameraOn, capturePhase, playCamera, preview, step]);
 
   useEffect(() => {
     const el = bleedRef.current;
@@ -287,6 +319,7 @@ export default function HomePage() {
       replacePreview(URL.createObjectURL(file));
       setCapturePhase('reviewing');
       setError(null);
+      setCameraPlaybackBlocked(false);
       videoRef.current?.pause();
     },
     [replacePreview],
@@ -301,10 +334,9 @@ export default function HomePage() {
     const video = videoRef.current;
     const stream = streamRef.current;
     if (video && stream) {
-      if (video.srcObject !== stream) video.srcObject = stream;
-      void video.play().catch(() => undefined);
+      void playCamera(stream);
     }
-  }, [capturePhase, replacePreview]);
+  }, [capturePhase, playCamera, replacePreview]);
 
   const runUpload = async (file: File) => {
     const id = ++gen.current;
@@ -501,8 +533,24 @@ export default function HomePage() {
               autoPlay
               playsInline
               muted
+              controls={false}
               disablePictureInPicture
+              onLoadedMetadata={() => {
+                if (capturePhase === 'live' && !preview) void playCamera();
+              }}
+              onCanPlay={() => {
+                if (capturePhase === 'live' && !preview) void playCamera();
+              }}
             />
+            {cameraPlaybackBlocked && capturePhase === 'live' && !preview && !cameraDenied ? (
+              <button
+                type="button"
+                className="camera-start"
+                onClick={() => void playCamera()}
+              >
+                Start camera
+              </button>
+            ) : null}
             {preview ? <img src={preview} alt="" className="camera-still" /> : null}
             {processing && (
               <div className="busy-overlay" role="status" aria-live="polite" aria-label="Working">
