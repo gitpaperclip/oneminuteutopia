@@ -5,13 +5,14 @@ import { CATEGORY_LABELS } from '@/lib/analysis-labels';
 import {
   handoffsForCategory,
   isEmergencyHandoff,
+  reportLinkOwnerIds,
   telHref,
   type HandoffLink,
 } from '@/lib/baltimore-routes';
 
 /* eslint-disable @next/next/no-img-element -- public mark */
 
-function HandoffItem({ link }: { link: HandoffLink }) {
+function HandoffItem({ link, showReportLink }: { link: HandoffLink; showReportLink: boolean }) {
   const isTel = link.href.startsWith('tel:');
   const title = link.department || link.label;
 
@@ -33,7 +34,7 @@ function HandoffItem({ link }: { link: HandoffLink }) {
 
         {isTel ? null : (
           <div className="handoff-links">
-            {link.reportUrl ? (
+            {link.reportUrl && showReportLink ? (
               <a
                 className="handoff-portal"
                 href={link.reportUrl}
@@ -50,7 +51,7 @@ function HandoffItem({ link }: { link: HandoffLink }) {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Website
+                Department website
               </a>
             ) : null}
           </div>
@@ -79,6 +80,7 @@ export default async function ReceiptPage({
     isEmergencyHandoff(category, report.seriousness);
   const label = CATEGORY_LABELS[category] || category.replaceAll('_', ' ');
   const contacts = handoffsForCategory(category).filter((link) => link.id !== '911');
+  const reportLinkOwners = reportLinkOwnerIds(contacts);
   const evidenceCount = incident?.evidence_count ?? 1;
 
   return (
@@ -114,7 +116,11 @@ export default async function ReceiptPage({
           <h2>{emergency ? 'Other contacts' : 'Report this issue'}</h2>
           <ul className="handoff-list">
             {contacts.map((link) => (
-              <HandoffItem key={link.id} link={link} />
+              <HandoffItem
+                key={link.id}
+                link={link}
+                showReportLink={reportLinkOwners.has(link.id)}
+              />
             ))}
           </ul>
         </section>

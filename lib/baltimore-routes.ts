@@ -46,7 +46,7 @@ const DPW_SOLID: HandoffLink = {
   id: 'dpw-solid',
   label: 'DPW Solid Waste',
   department: 'Baltimore City Department of Public Works',
-  href: 'https://publicworks.baltimorecity.gov/',
+  href: 'https://www.baltimorecity.gov/publicworks',
   reportUrl: B311_REPORT_URL,
   phones: [
     { number: '410-396-5134', label: 'Solid waste' },
@@ -59,7 +59,7 @@ const DPW_WATER: HandoffLink = {
   id: 'dpw-water',
   label: 'DPW Water & Wastewater',
   department: 'Baltimore City Department of Public Works',
-  href: 'https://publicworks.baltimorecity.gov/',
+  href: 'https://www.baltimorecity.gov/publicworks',
   reportUrl: B311_REPORT_URL,
   phones: [
     { number: '410-396-3500', label: 'Water and wastewater' },
@@ -73,7 +73,7 @@ const BCDOT: HandoffLink = {
   id: 'bcdot',
   label: 'Dept. of Transportation',
   department: 'Baltimore City Department of Transportation',
-  href: 'https://transportation.baltimorecity.gov/',
+  href: 'https://www.baltimorecity.gov/transportation',
   reportUrl: B311_REPORT_URL,
   note: 'Potholes, signs, signals, and streetlights in the public right-of-way. File through Baltimore 311.',
 };
@@ -91,7 +91,7 @@ const BCRP: HandoffLink = {
   id: 'bcrp',
   label: 'Recreation & Parks',
   department: 'Baltimore City Recreation and Parks',
-  href: 'https://bcrp.baltimorecity.gov/',
+  href: 'https://www.baltimorecity.gov/bcrp',
   reportUrl: B311_REPORT_URL,
   note: 'Parks, playgrounds, trails, and park trees. File through Baltimore 311.',
 };
@@ -102,6 +102,7 @@ const BCHD: HandoffLink = {
   department: 'Baltimore City Health Department',
   href: 'https://www.baltimorecity.gov/health/our-work/animal-services',
   reportUrl: B311_REPORT_URL,
+  phones: [{ number: '410-396-4688', label: 'Animal Control' }],
   note: 'Animal-control and environmental health complaints. File through Baltimore 311.',
 };
 
@@ -109,7 +110,7 @@ const BCFD: HandoffLink = {
   id: 'bcfd',
   label: 'Fire Department',
   department: 'Baltimore City Fire Department',
-  href: 'https://www.baltimorecity.gov/fire',
+  href: 'https://www.baltimorecity.gov/fire/contact',
   reportUrl: B311_REPORT_URL,
   phones: [{ number: '410-396-5680', label: 'Non-emergency contact' }],
   note: 'Non-emergency only — call 911 if there is immediate danger. File through Baltimore 311.',
@@ -120,7 +121,7 @@ const BPD: HandoffLink = {
   label: 'Baltimore Police',
   department: 'Baltimore Police Department',
   href: 'https://www.baltimorepolice.org/file-police-report',
-  reportUrl: 'https://www.baltimorepolice.org/file-police-report',
+  reportUrl: 'https://secure.coplogic.com/dors/startreport/300005404',
   phones: [{ number: '410-637-8875', label: 'Telephone Reporting Unit' }],
   note: 'Eligible non-emergency reports only. Call 911 if there is immediate danger.',
 };
@@ -199,6 +200,15 @@ export function reportUrlForLink(link: HandoffLink): string {
   if (link.reportUrl) return link.reportUrl;
   if (link.href.startsWith('http')) return link.href;
   return B311_REPORT_URL;
+}
+
+/** Show each online intake once. When several agencies use 311, its own card owns the button. */
+export function reportLinkOwnerIds(links: HandoffLink[]): Set<string> {
+  const ownerByUrl = new Map<string, string>();
+  for (const link of links) {
+    if (link.reportUrl) ownerByUrl.set(link.reportUrl, link.id);
+  }
+  return new Set(ownerByUrl.values());
 }
 
 /** Official public reporting/entry page for the likely agency (311 fallback when no dedicated form). */

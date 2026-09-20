@@ -11,6 +11,7 @@ import {
   isEmergencyHandoff,
   likelyDepartmentName,
   primaryHandoff,
+  reportLinkOwnerIds,
   telHref,
 } from '../lib/baltimore-routes.ts';
 
@@ -87,7 +88,18 @@ test('each category maps to an https public report URL', () => {
   assert.equal(agencyReportLink('electricity_and_gas').href, 'https://secure.bge.com/powerOutages/');
   assert.equal(agencyReportLink('fire_injury_or_immediate_threat').id, 'bcfd');
   assert.equal(agencyReportLink('fire_injury_or_immediate_threat').href, B311_REPORT_URL);
-  assert.equal(handoffsForCategory('fire_injury_or_immediate_threat').find((l) => l.id === 'bpd')?.reportUrl, 'https://www.baltimorepolice.org/file-police-report');
+  assert.equal(handoffsForCategory('fire_injury_or_immediate_threat').find((l) => l.id === 'bpd')?.reportUrl, 'https://secure.coplogic.com/dors/startreport/300005404');
+});
+
+test('shared 311 intake appears once while dedicated report portals remain visible', () => {
+  assert.deepEqual(
+    [...reportLinkOwnerIds(handoffsForCategory('trash_and_sanitation'))],
+    ['b311'],
+  );
+  assert.deepEqual(
+    [...reportLinkOwnerIds(handoffsForCategory('fire_injury_or_immediate_threat'))].sort(),
+    ['b311', 'bpd'],
+  );
 });
 
 test('analysis reporting chip uses catalog agency names and reporting, not report', () => {
