@@ -29,6 +29,7 @@ government response.
 - Includes Beacon, an optional local Playwright worker that files score-ready clusters
   into mock government forms (mock forms for Baltimore public departments).
 
+
 If AI analysis is unavailable, the photo is retained with an explicit unavailable
 status and the resident can finish a manual report. An unavailable assessment is
 never displayed as zero risk.
@@ -222,6 +223,12 @@ supabase/migrations/                      Database setup in execution order
 tests/                                    Contract and regression tests
 ```
 
+## Links
+
+  repository for mock government sites that are used for testing and demo
+  general reports:                https://github.com/A1x-Z/mock_government_page_without_api
+  public transportation specific: https://github.com/A1x-Z/mock_second_gov_site_transportation_specific
+  
 ## Troubleshooting
 
 - **Photo cannot be saved:** verify the `report-photos` bucket, Supabase URL and
