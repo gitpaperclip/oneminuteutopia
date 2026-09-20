@@ -90,6 +90,30 @@ body {
 }
 
 .camera-video.is-hidden { opacity: 0; }
+.camera-video::-webkit-media-controls,
+.camera-video::-webkit-media-controls-overlay-play-button,
+.camera-video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none;
+}
+.camera-start {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  min-height: 46px;
+  padding: 0 18px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255,255,255,.42);
+  border-radius: 999px;
+  background: rgba(28,28,30,.72);
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
 
 .busy-overlay {
   position: absolute; inset: 0; display: grid; place-items: center;
